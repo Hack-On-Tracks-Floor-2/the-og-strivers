@@ -10,13 +10,14 @@
     "start": "node dist/apps/api/src/server.js"
   },
   "dependencies": {
-    "@proofpatch/shared": "*",
     "@electric-sql/pglite": "^0.3.14",
-    "express": "^5.1.0",
+    "@proofpatch/shared": "*",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
-    "helmet": "^8.1.0",
+    "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "typescript": "^5.9.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {

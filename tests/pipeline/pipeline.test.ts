@@ -16,6 +16,7 @@ import { applyEdits, unifiedDiff, changedLineCount, EditError } from '../../apps
 import { parseJUnit, compareSuites } from '../../apps/api/src/verification/junit.js';
 import { DockerSandbox, hardeningArgs } from '../../apps/api/src/verification/docker.js';
 import { inspectRepository } from '../../apps/api/src/agents/intelligence.js';
+import { detectToolchain } from '../../apps/api/src/agents/toolchain.js';
 import { randomUUID } from 'node:crypto';
 
 const FIXTURE = join(__dirname, 'fixtures', 'vulnapp');
@@ -68,6 +69,37 @@ describe('search funnel (local, zero AI tokens)', () => {
     const { candidates, model } = await findCandidates(FIXTURE, { locator });
     expect(model?.error).toContain('model offline');
     expect(candidates[0]).toMatchObject({ file: 'vulnapp/store.py', cwe: 'CWE-89' });
+  });
+});
+
+describe('JavaScript support', () => {
+  const JS_FIXTURE = join(__dirname, 'fixtures', 'vulnjs');
+  it('maps a node:test repository to the JavaScript toolchain', async () => {
+    const map = await inspectRepository(JS_FIXTURE);
+    expect(map.languages[0]).toBe('JavaScript');
+    const tc = await detectToolchain(JS_FIXTURE, map);
+    expect(tc).toMatchObject({ language: 'javascript', framework: 'node:test' });
+    if ('unsupported' in tc) throw new Error(tc.unsupported);
+    expect(tc.suite).toContain('--test-reporter-destination=/out/junit.xml');
+    expect(tc.only('test/proofpatch_security/x.test.js').at(-1)).toBe('test/proofpatch_security/x.test.js');
+  });
+  it('picks Jest or Mocha from package.json and rejects unsupported languages', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pp-tc-'));
+    const map = { languages: ['JavaScript'], frameworks: [], entryPoints: [], testCommands: [], hasNodeTests: true };
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { jest: '^29' }, type: 'module' }));
+    expect(await detectToolchain(dir, map)).toMatchObject({ framework: 'jest', esm: true });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'mocha' } }));
+    expect(await detectToolchain(dir, map)).toMatchObject({ framework: 'mocha' });
+    expect(await detectToolchain(dir, { ...map, languages: ['Go'] })).toHaveProperty('unsupported');
+    await rm(dir, { recursive: true, force: true });
+  });
+  it('finds the command injection and sends only the enclosing function', async () => {
+    const { candidates, filesScanned } = await findCandidates(JS_FIXTURE, { language: 'javascript' });
+    expect(filesScanned).toBe(1); // test/ excluded
+    expect(candidates[0]).toMatchObject({ file: 'src/greet.js', cwe: 'CWE-78', id: 'C1' });
+    expect(candidates[0].snippet).toContain('function greet(name)');
+    expect(candidates[0].snippet).toContain('execSync(`echo Hello ${name}`)');
+    expect(candidates[0].snippet).not.toContain('function shout');
   });
 });
 

@@ -21,6 +21,7 @@ import type { RepositoryIngestionService } from '../repositories/ingestion.js';
 import type { WorkspaceStore } from '../repositories/clone.js';
 import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
+import { detectToolchain, type Language, type Toolchain } from '../agents/toolchain.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
 import { EditError, unifiedDiff } from '../patching/edits.js';
@@ -38,7 +39,7 @@ import type { Locator } from '../scanners/locator.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
-  prepare(workspace: WorkspaceHandle, signal: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
+  prepare(workspace: WorkspaceHandle, signal: AbortSignal, language?: Language): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
   executeWith(request: ExecutionRequest, depsId: string, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>>;
   cleanup(workspaceId: string): Promise<void>;
 }
@@ -124,11 +125,24 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     return { ...from, id };
   }
 
+  const languageOf = new Map<string, Language>();
+  async function prepareDeps(workspace: WorkspaceHandle, tc: Toolchain, signal: AbortSignal) {
+    languageOf.set(workspace.id, tc.language);
+    return sandbox.prepare(workspace, signal, tc.language);
+  }
+  async function toolchainFor(root: string) {
+    const map = await inspectRepository(root);
+    const tc = await detectToolchain(root, map);
+    if ('unsupported' in tc) throw new StageFailure(`Unsupported repository: ${tc.unsupported}`);
+    return { map, tc };
+  }
+
   async function execute(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
     const result = await sandbox.executeWith(
       {
         workspace,
         argv,
+        language: languageOf.get(depsId) ?? 'python',
         timeoutMs: testTimeoutMs,
         memoryMb: 1024,
         cpuLimit: 1,
@@ -144,7 +158,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   }
 
   async function runSuite(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
-    const out = await execute(workspace, depsId, [...argv, '--junitxml=/out/junit.xml'], signal);
+    const out = await execute(workspace, depsId, argv, signal); // toolchain argv already writes /out/junit.xml
     const tests = out.files['junit.xml'] ? parseJUnit(out.files['junit.xml']) : null;
     return { out, tests, logs: tail(`${out.stdout}\n${out.stderr}`) };
   }
@@ -256,15 +270,13 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await event(run, 'stage_completed', `Cloned at commit ${original.commitSha}.`);
 
       // 2. Map the repository without executing it.
-      const map = await inspectRepository(store.path(original.id));
-      if (!map.testCommands.length)
-        throw new StageFailure(`No supported test suite found (languages: ${map.languages.join(', ') || 'none'}). Supported: Python + pytest.`);
-      const testArgv = map.testCommands[0];
-      await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · test command ${JSON.stringify(testArgv)}.`);
+      const { map, tc } = await toolchainFor(store.path(original.id));
+      const testArgv = tc.suite;
+      await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${tc.label} · test command ${JSON.stringify(testArgv)}.`);
 
       // 3. Install dependencies in the isolated preparation stage (only stage with network).
       await event(run, 'stage_started', 'Installing declared dependencies in the sandbox preparation stage.');
-      const prepared = await sandbox.prepare(original, signal);
+      const prepared = await prepareDeps(original, tc, signal);
       if (prepared.exitCode !== 0)
         throw new StageFailure(`Dependency installation failed (exit ${prepared.exitCode}${prepared.timedOut ? ', timed out' : ''}): ${tail(prepared.stderr, 600)}`);
       await event(run, 'stage_completed', 'Dependencies installed. All further execution runs with network disabled.');
@@ -280,6 +292,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       // 5. Local scanner (Bandit, in the sandbox) + sink search + one AI confirmation call.
       let external: ExternalHit[] = [];
       try {
+        if (tc.language !== 'python') throw new Error('Bandit is Python-only.');
         const scan = await execute(original, original.id, ['bandit', '-r', '.', '-f', 'json', '-o', '/out/bandit.json', '-q', '-x', './tests,./test'], signal);
         const report = JSON.parse(scan.files['bandit.json'] ?? '{"results":[]}') as {
           results: { filename: string; line_number: number; test_id: string; issue_text: string; issue_cwe?: { id?: number } }[];
@@ -294,7 +307,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       } catch {
         external = [];
       }
-      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, onUsage });
+      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, language: tc.language, onUsage });
       await event(
         run,
         'stage_completed',
@@ -314,7 +327,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           await event(run, 'stage_started', `Generating patch for ${finding.file}:${finding.startLine} (${finding.cwe}), attempt ${attempt}/${maxAttempts}.`);
           let generated: GeneratedPatch;
           try {
-            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, attempt, onUsage });
+            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, attempt, toolchain: tc, onUsage });
           } catch (error) {
             if (!(error instanceof EditError)) throw error;
             previousFailure = `Your edits could not be applied: ${error.message}`;
@@ -332,9 +345,9 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           });
           workspaces.push(patched.id);
           // -rP prints captured output of passing tests too, so a no-effect attack shows its shell/DB errors.
-          const securityArgv = [...testArgv, '--tb=short', '-rP', testPath];
+          const securityArgv = tc.only(testPath);
           const baselineRecord = await record(run, patch.id, 'baseline', true, {
-            exitCode: baseline.out.exitCode, command: [...testArgv, '--junitxml=/out/junit.xml'], logs: baseline.logs,
+            exitCode: baseline.out.exitCode, command: testArgv, logs: baseline.logs,
             tests: baseline.tests, junit: baseline.out.files['junit.xml'],
           });
           void baselineRecord;
@@ -424,6 +437,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       for (const id of workspaces) {
         await store.remove(id).catch(() => {});
         await sandbox.cleanup(id).catch(() => {});
+        languageOf.delete(id);
       }
     }
   }
@@ -528,16 +542,15 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       const latest = await copyWorkspace({ id: repoId, repositoryId: repository.id, commitSha: baseSha }, {});
       workspaces.push(latest.id);
       await rm(join(store.path(latest.id), '.git'), { recursive: true, force: true });
-      const map = await inspectRepository(store.path(latest.id));
-      if (!map.testCommands.length) throw new StageFailure('The latest code no longer has a supported test suite.');
-      const testArgv = map.testCommands[0];
-      const prepared = await sandbox.prepare(latest, signal);
+      const { tc } = await toolchainFor(store.path(latest.id));
+      const testArgv = tc.suite;
+      const prepared = await prepareDeps(latest, tc, signal);
       if (prepared.exitCode !== 0) throw new StageFailure(`Dependency installation failed on the latest code (exit ${prepared.exitCode}).`);
       const baseline = await runSuite(latest, latest.id, testArgv, signal);
       if (!baseline.tests?.total) throw new StageFailure('The latest code produced no test results.');
       checks.push({ stage: 'baseline', passed: true, summary: `Latest code: ${summarize(baseline.tests)}.` });
       if (!patch.securityTest) throw new StageFailure('The approved patch has no security test to re-prove it.');
-      const securityArgv = [...testArgv, '--tb=short', '-rP', patch.securityTest.path];
+      const securityArgv = tc.only(patch.securityTest.path);
       const withTest = await copyWorkspace(latest, { [patch.securityTest.path]: patch.securityTest.content });
       workspaces.push(withTest.id);
       const repro = await runSuite(withTest, latest.id, securityArgv, signal);
@@ -586,6 +599,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       for (const id of workspaces) {
         await store.remove(id).catch(() => {});
         await sandbox.cleanup(id).catch(() => {});
+        languageOf.delete(id);
       }
     }
   }

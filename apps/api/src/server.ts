@@ -51,6 +51,7 @@ const dataRoot = resolve(root, process.env.WORK_PATH ?? '.data/work');
 const store = new WorkspaceStore(resolve(dataRoot, 'workspaces'));
 const sandbox = new DockerSandbox({
   image: process.env.SANDBOX_IMAGE ?? 'proofpatch-runner:py312',
+  nodeImage: process.env.SANDBOX_NODE_IMAGE ?? 'proofpatch-runner:node22',
   docker: process.env.DOCKER_BIN || 'docker',
   workspacePath: (id) => store.path(id),
   scratchRoot: resolve(dataRoot, 'scratch'),

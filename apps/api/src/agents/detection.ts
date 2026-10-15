@@ -60,9 +60,10 @@ export async function detectVulnerabilities(input: {
   signal: AbortSignal;
   external?: ExternalHit[];
   locator?: Locator | null;
+  language?: 'python' | 'javascript';
   onUsage?: (usage: AiUsage, note: string) => void | Promise<void>;
 }): Promise<{ issues: DetectedIssue[]; candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
-  const search = await findCandidates(input.root, { external: input.external, locator: input.locator });
+  const search = await findCandidates(input.root, { external: input.external, locator: input.locator, language: input.language });
   if (!search.candidates.length) return { issues: [], ...search };
   const data = search.candidates
     .map((c) => `### ${c.id} ${c.file}:${c.startLine}-${c.endLine} (${c.rule === 'trained-model' ? 'trained model' : 'scanner'}: ${c.category}, ${c.cwe}${c.modelScore !== undefined ? `, model risk ${Math.round(c.modelScore * 100)}%` : ''})\n${c.snippet}`)

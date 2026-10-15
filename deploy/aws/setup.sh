@@ -51,6 +51,7 @@ sudo -u "$USER_NAME" npm ci --no-audit --no-fund
 sudo -u "$USER_NAME" npm run build -w @proofpatch/shared
 sudo -u "$USER_NAME" npm run build -w @proofpatch/api
 docker build -t proofpatch-runner:py312 docker/runner
+docker build -t proofpatch-runner:node22 docker/runner-node
 
 # 4. API as a service (restarts on crash and on reboot).
 cat > /etc/systemd/system/proofpatch-api.service <<EOF

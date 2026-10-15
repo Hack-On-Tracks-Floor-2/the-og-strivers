@@ -8,6 +8,8 @@ export interface ExecutionRequest {
   network: 'none';
   readOnlyRoot: true;
   maxOutputBytes: number;
+  /** Selects the runner image (defaults to Python). */
+  language?: 'python' | 'javascript';
 }
 export interface ExecutionResult {
   exitCode: number;

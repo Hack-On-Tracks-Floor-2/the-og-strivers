@@ -8,6 +8,8 @@ import type { ExecutionRequest, ExecutionResult, SandboxExecutionAdapter } from 
 
 export interface DockerOptions {
   image: string;
+  /** Runner image for JavaScript repositories (node:test / Jest / Mocha). */
+  nodeImage?: string;
   workspacePath: (id: string) => string;
   scratchRoot: string; // per-execution output folders and dependency folders
   docker?: string;
@@ -96,6 +98,10 @@ export class DockerSandbox implements SandboxExecutionAdapter {
     });
   }
 
+  private imageFor(language: 'python' | 'javascript' = 'python') {
+    return language === 'javascript' ? (this.options.nodeImage ?? 'proofpatch-runner:node22') : this.options.image;
+  }
+
   depsPath(workspaceId: string) {
     return join(this.options.scratchRoot, 'deps', workspaceId);
   }
@@ -105,11 +111,22 @@ export class DockerSandbox implements SandboxExecutionAdapter {
    * dependency folder. This is the ONLY stage with network access; it still runs as a
    * non-root user with no capabilities and resource limits. Tests later mount it read-only.
    */
-  async prepare(workspace: WorkspaceHandle, signal: AbortSignal) {
+  async prepare(workspace: WorkspaceHandle, signal: AbortSignal, language: 'python' | 'javascript' = 'python') {
     const deps = this.depsPath(workspace.id);
     await mkdir(deps, { recursive: true });
     await chmod(deps, 0o777); // container runs as uid 10001
-    const script = [
+    // npm runs with install scripts disabled: a repository's postinstall never executes, even here.
+    const nodeScript = [
+      'set -e',
+      'cp package.json /deps/package.json',
+      'if [ -f package-lock.json ]; then cp package-lock.json /deps/; fi',
+      'cd /deps',
+      'if [ -f package-lock.json ]; then npm ci --ignore-scripts --no-audit --no-fund --loglevel=error;',
+      'else npm install --ignore-scripts --no-audit --no-fund --loglevel=error; fi',
+      'if grep -q \'"jest"\' package.json; then npm install --no-save --ignore-scripts --no-audit --no-fund --loglevel=error jest-junit; fi',
+      'echo prepared',
+    ].join('\n');
+    const pythonScript = [
       'set -e',
       'for f in requirements.txt requirements-dev.txt requirements-test.txt test-requirements.txt requirements/test.txt requirements/dev.txt; do',
       '  if [ -f "$f" ]; then pip install --no-cache-dir --quiet --target /deps -r "$f"; fi',
@@ -125,7 +142,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         ...hardeningArgs(1536, 2),
         ...bind(this.options.workspacePath(workspace.id), '/src', true),
         ...bind(deps, '/deps', false),
-        this.options.image, 'sh', '-c', script,
+        this.imageFor(language), 'sh', '-c', language === 'javascript' ? nodeScript : pythonScript,
       ],
       300_000,
       200_000,
@@ -153,7 +170,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
           ...bind(this.options.workspacePath(request.workspace.id), '/src', true),
           ...bind(deps, '/deps', true),
           ...bind(out, '/out', false),
-          this.options.image,
+          this.imageFor(request.language),
           ...request.argv,
         ],
         request.timeoutMs,

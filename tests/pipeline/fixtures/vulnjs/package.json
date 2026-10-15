@@ -1,0 +1,7 @@
+{
+  "name": "vulnjs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny greeting service used as a ProofPatch test fixture (intentionally vulnerable).",
+  "scripts": { "test": "node --test" }
+}

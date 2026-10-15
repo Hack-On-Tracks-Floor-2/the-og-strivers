@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listSourceFiles } from '../agents/intelligence.js';
 import type { Locator } from './locator.js';
+import { JS_ROUTE, JS_SINKS, JS_USER_INPUT, jsFunctionSpans } from './javascript.js';
 
 /**
  * Token-efficient code search. Steps 1–2 of the funnel run locally with zero AI tokens:
@@ -218,11 +219,19 @@ export function numbered(lines: string[], start: number, end: number) {
 
 export async function findCandidates(
   root: string,
-  options: { maxCandidates?: number; maxSnippetLines?: number; external?: ExternalHit[]; locator?: Locator | null } = {},
+  options: {
+    maxCandidates?: number;
+    maxSnippetLines?: number;
+    external?: ExternalHit[];
+    locator?: Locator | null;
+    language?: 'python' | 'javascript';
+  } = {},
 ): Promise<{ candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
   const maxCandidates = options.maxCandidates ?? 6;
   const maxSnippetLines = options.maxSnippetLines ?? 45;
-  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && f.path.endsWith('.py'));
+  const js = options.language === 'javascript';
+  const sinks = js ? JS_SINKS : PYTHON_SINKS;
+  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && (js ? /\.[cm]?js$/.test(f.path) : f.path.endsWith('.py')));
   const contents = new Map<string, string[]>();
   type Hit = Omit<Candidate, 'id' | 'startLine' | 'endLine' | 'snippet' | 'source'> & { external: boolean };
   const hits: Hit[] = [];
@@ -230,8 +239,8 @@ export async function findCandidates(
     const lines = (await readFile(join(root, file.path), 'utf8')).split(/\r?\n/);
     contents.set(file.path, lines);
     lines.forEach((text, i) => {
-      if (/^\s*#/.test(text)) return;
-      for (const rule of PYTHON_SINKS)
+      if (js ? /^\s*(\/\/|\*|\/\*)/.test(text) : /^\s*#/.test(text)) return;
+      for (const rule of sinks)
         if (rule.pattern.test(text))
           hits.push({ file: file.path, line: i + 1, cwe: rule.cwe, category: rule.category, rule: rule.id,
             score: rule.weight, external: false });
@@ -246,7 +255,7 @@ export async function findCandidates(
   // Trained model: scores every function, so it can rank regex hits and surface code the rules miss.
   let modelFns: ModelFunction[] = [];
   let model: ModelSummary | undefined;
-  if (options.locator) {
+  if (options.locator && !js) {
     try {
       const r = await scoreFunctions(root, files.map((f) => f.path), contents, options.locator);
       modelFns = r.scored;
@@ -268,7 +277,7 @@ export async function findCandidates(
   // Function spans for every hit, in one python process.
   const wanted = new Map<string, number[]>();
   for (const h of hits) wanted.set(h.file, [...(wanted.get(h.file) ?? []), h.line]);
-  const spans = await functionSpans(root, wanted);
+  const spans = js ? await jsFunctionSpans(root, wanted) : await functionSpans(root, wanted);
 
   const scored = hits.map((h) => {
     const lines = contents.get(h.file)!;
@@ -276,8 +285,8 @@ export async function findCandidates(
     let [start, end] = span ?? [Math.max(1, h.line - 8), Math.min(lines.length, h.line + 8)];
     const body = lines.slice(start - 1, end).join('\n');
     let score = h.score;
-    if (USER_INPUT.test(body)) score += 4; // user input reaches the same function
-    if (/@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/.test(body)) score += 2;
+    if ((js ? JS_USER_INPUT : USER_INPUT).test(body)) score += 4; // user input reaches the same function
+    if (js ? JS_ROUTE.test(body) : /@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/.test(body)) score += 2;
     const m = modelFor(h.file, h.line);
     if (m) score += Math.round(m.score * 10); // trained model agrees this function is risky
     if (end - start + 1 > maxSnippetLines) {

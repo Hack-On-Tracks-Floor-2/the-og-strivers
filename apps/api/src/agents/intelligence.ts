@@ -9,7 +9,7 @@ export const IGNORED_DIRS = new Set([
   'examples', 'migrations', '.github', 'coverage', 'htmlcov', 'static', 'assets',
 ]);
 const LANGUAGES: Record<string, string> = {
-  '.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript', '.go': 'Go', '.java': 'Java',
+  '.py': 'Python', '.js': 'JavaScript', '.cjs': 'JavaScript', '.mjs': 'JavaScript', '.ts': 'TypeScript', '.go': 'Go', '.java': 'Java',
   '.rb': 'Ruby', '.php': 'PHP', '.rs': 'Rust', '.c': 'C', '.cpp': 'C++',
 };
 const FRAMEWORKS: [RegExp, string][] = [
@@ -23,7 +23,10 @@ export interface SourceFile {
   isTest: boolean;
 }
 export const isTestPath = (p: string) =>
-  /(^|\/)(tests?|testing)\//.test(p) || /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(p) || /conftest\.py$/.test(p);
+  /(^|\/)(tests?|testing|__tests__|spec)\//.test(p) ||
+  /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(p) ||
+  /conftest\.py$/.test(p) ||
+  /\.(test|spec)\.[cm]?js$/.test(p);
 
 /** Lists source files, skipping vendored/generated folders and anything over 200 KB. */
 export async function listSourceFiles(root: string): Promise<SourceFile[]> {
@@ -70,14 +73,15 @@ export async function inspectRepository(root: string): Promise<RepositoryMap> {
   ).join('\n');
   const frameworks = FRAMEWORKS.filter(([re]) => re.test(manifests)).map(([, name]) => name);
   const entryPoints = files
-    .filter((f) => !f.isTest && /(^|\/)(app|main|server|wsgi|asgi|views|routes|api)\.py$/.test(f.path))
+    .filter((f) => !f.isTest && /(^|\/)(app|main|server|wsgi|asgi|views|routes|api|index)\.(py|[cm]?js)$/.test(f.path))
     .map((f) => f.path)
     .slice(0, 20);
   const testCommands: string[][] = [];
   const hasPyTests = files.some((f) => f.isTest && f.path.endsWith('.py'));
   if (languages[0] === 'Python' && hasPyTests)
     testCommands.push(['python', '-m', 'pytest', '-q', '-p', 'no:cacheprovider']);
-  return { languages, frameworks, entryPoints, testCommands };
+  const hasNodeTests = files.some((f) => f.isTest && /\.[cm]?js$/.test(f.path));
+  return { languages, frameworks, entryPoints, testCommands, hasNodeTests };
 }
 
 export function repositoryIntelligence(workspacePath: (id: string) => string): RepositoryIntelligenceAgent {
@@ -88,7 +92,7 @@ export function repositoryIntelligence(workspacePath: (id: string) => string): R
         return {
           code: 'CAPABILITY_UNAVAILABLE',
           state: 'not_implemented',
-          message: `No supported test suite found (languages: ${map.languages.join(', ') || 'none'}). This version supports Python repositories with a pytest suite.`,
+          message: `No supported test suite found (languages: ${map.languages.join(', ') || 'none'}). Supported: Python (pytest) and JavaScript (node:test, Jest, Mocha).`,
         };
       return { state: 'completed', data: map };
     },
