@@ -320,8 +320,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
 
       // 6–8. Patch → reproduce (red) → retest (green) → regression, with feedback retries.
       const testFiles = (await listSourceFiles(store.path(original.id))).filter((f) => f.isTest).map((f) => f.path);
+      // Every confirmed finding (up to 3) gets its own proven patch; each lands in the review queue.
+      let proven = 0;
       for (const { issue, finding } of findings) {
         let previousFailure: string | undefined;
+        try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           await setRun(run, { status: 'patching' });
           await event(run, 'stage_started', `Generating patch for ${finding.file}:${finding.startLine} (${finding.cwe}), attempt ${attempt}/${maxAttempts}.`);
@@ -427,12 +430,20 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           await record(run, patch.id, 'final_decision', true, { exitCode: 0, command: ['proofpatch', 'decide'], logs: report });
           await artifact(run, 'report', report);
           await setPatchStatus(patch, 'needs_review');
-          await setRun(run, { status: 'needs_review', error: null });
-          await event(run, 'stage_completed', `Proof complete on attempt ${attempt}: vulnerability reproduced, fixed, and the existing suite is intact. Awaiting human review.`);
-          return;
+          await event(run, 'stage_completed', `Proof complete for ${finding.cwe} at ${finding.file}:${finding.startLine} on attempt ${attempt}: vulnerability reproduced, fixed, and the existing suite is intact.`);
+          proven += 1;
+          break;
+        }
+        } catch (error) {
+          // Out of AI budget after at least one proven fix: keep what is proven instead of failing the run.
+          if (!(error instanceof AiError) || proven === 0) throw error;
+          await event(run, 'stage_failed', `Stopped after ${proven} proven fix(es): ${error.message}`);
+          break;
         }
       }
-      throw new StageFailure(`No patch passed all proofs within ${maxAttempts} attempts per finding.`);
+      if (!proven) throw new StageFailure(`No patch passed all proofs within ${maxAttempts} attempts per finding.`);
+      await setRun(run, { status: 'needs_review', error: null });
+      await event(run, 'stage_completed', `${proven} of ${findings.length} confirmed vulnerabilit${findings.length === 1 ? 'y' : 'ies'} fixed and proven. Awaiting human review.`);
     } finally {
       for (const id of workspaces) {
         await store.remove(id).catch(() => {});
