@@ -119,6 +119,14 @@ describe('patch edits and diffs', () => {
       applyEdits([{ file: 'a.py', search: ' = ', replace: '=' }], () => 'a = 1\nb = 2\n'),
     ).toThrow(/not unique/);
   });
+  it('matches a re-indented search with escaped backticks and keeps the file indentation', () => {
+    const file = 'function a(x) {\n  return run(`echo ${x}`);\n}\n';
+    const [change] = applyEdits(
+      [{ file: 'a.js', search: 'return run(\\`echo ${x}\\`);', replace: "return run('echo', [x]);\nif (!x) throw new Error('empty');" }],
+      () => file,
+    );
+    expect(change.proposed).toBe("function a(x) {\n  return run('echo', [x]);\n  if (!x) throw new Error('empty');\n}\n");
+  });
 });
 
 describe('JUnit parsing and the regression gate', () => {
