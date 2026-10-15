@@ -23,6 +23,10 @@ ap.add_argument('--batch', type=int, default=8)
 ap.add_argument('--lr', type=float, default=2e-5)
 ap.add_argument('--pos-weight', type=float, default=8.0)
 ap.add_argument('--out', default='models/locator')
+ap.add_argument('--data', default='data')
+ap.add_argument('--name', default='metrics')
+ap.add_argument('--extra-test', nargs='*', default=['data/v5/test_sven.jsonl'], help='more held-out sets, e.g. raw-source SVEN')
+ap.add_argument('--init', default=None, help='continue from an existing locator.pt')
 args = ap.parse_args()
 
 random.seed(7)
@@ -35,10 +39,12 @@ def load(path):
     return [json.loads(l) for l in open(path, encoding='utf-8')]
 
 
-train, val, test = load('data/train.jsonl'), load('data/val.jsonl'), load('data/test.jsonl')
+train, val, test = (load(os.path.join(args.data, f'{s}.jsonl')) for s in ('train', 'val', 'test'))
 tok = load_tokenizer()
 mk = lambda rows, shuffle: DataLoader(rows, batch_size=args.batch, shuffle=shuffle, collate_fn=lambda b: collate(tok, b))
 model = LineLocator(BASE).to(device)
+if args.init:
+    model.load_state_dict(torch.load(args.init, map_location=device))
 opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 steps = args.epochs * math.ceil(len(train) / args.batch)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, s / max(1, 0.06 * steps)) * max(0.0, (steps - s) / steps))
@@ -97,7 +103,8 @@ for epoch in range(1, args.epochs + 1):
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=device == 'cuda'):
             logits = model(ids, att, lids, n)
         mask = labels >= 0
-        loss = (loss_fn(logits.float(), labels.clamp(min=0)) * mask).sum() / mask.sum().clamp(min=1)
+        target = (labels > 0).float()  # DetectVul labels are 0..k; any >0 = vulnerable
+        loss = (loss_fn(logits.float(), target) * mask).sum() / mask.sum().clamp(min=1)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
@@ -118,9 +125,15 @@ for epoch in range(1, args.epochs + 1):
 
 model.load_state_dict(torch.load(os.path.join(args.out, 'locator.pt'), map_location=device))
 test_m = metrics(predict(test), threshold=best['threshold'])
+extra = {}
+for path in args.extra_test:
+    if os.path.exists(path):
+        extra[os.path.basename(path).replace('.jsonl', '')] = metrics(predict(load(path)), threshold=best['threshold'])
 os.makedirs('results', exist_ok=True)
-report = {'base_model': BASE, 'train_examples': len(train), 'best_epoch': best['epoch'], 'validation': best,
+report = {'extra_tests': extra, 'base_model': BASE, 'data': args.data, 'init': args.init, 'args': vars(args), 'train_examples': len(train), 'best_epoch': best['epoch'], 'validation': best,
           'test': test_m, 'history': history, 'train_minutes': round((time.time() - t0) / 60, 1),
           'gpu': torch.cuda.get_device_name(0) if device == 'cuda' else 'cpu'}
-json.dump(report, open('results/metrics.json', 'w'), indent=2)
+json.dump(report, open(f'results/{args.name}.json', 'w'), indent=2)
 print('TEST', json.dumps(test_m), flush=True)
+for k, v in extra.items():
+    print('EXTRA', k, json.dumps(v), flush=True)

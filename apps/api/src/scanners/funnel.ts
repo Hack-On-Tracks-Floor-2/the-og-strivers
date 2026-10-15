@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listSourceFiles } from '../agents/intelligence.js';
+import type { Locator } from './locator.js';
 
 /**
  * Token-efficient code search. Steps 1–2 of the funnel run locally with zero AI tokens:
@@ -63,6 +64,8 @@ export interface Candidate {
   score: number;
   source: 'scanner' | 'scanner+ai' | 'ai';
   snippet: string;
+  /** Trained-model risk for the enclosing function (0-1), when the model ran. */
+  modelScore?: number;
 }
 export interface ExternalHit {
   file: string;
@@ -125,6 +128,87 @@ export async function functionSpans(
   });
 }
 
+/** Python helper: every def span in each file (outermost-first order irrelevant). Parses, never executes. */
+const ALL_SPANS_SCRIPT = `
+import ast, json, sys
+out = {}
+for path in json.load(sys.stdin):
+    try:
+        tree = ast.parse(open(path, encoding='utf-8', errors='replace').read())
+    except Exception:
+        continue
+    out[path] = [[min([d.lineno for d in n.decorator_list] + [n.lineno]), getattr(n, 'end_lineno', n.lineno)]
+                 for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+print(json.dumps(out))
+`;
+async function allFunctionSpans(root: string, files: string[], python = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3')) {
+  return new Promise<Record<string, [number, number][]>>((resolve) => {
+    const child = spawn(python, ['-I', '-c', ALL_SPANS_SCRIPT], { windowsHide: true, timeout: 20_000 });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.on('error', () => resolve({}));
+    child.on('close', () => {
+      try {
+        const raw = JSON.parse(out) as Record<string, [number, number][]>;
+        resolve(Object.fromEntries(Object.entries(raw).map(([full, s]) => [full.slice(root.length + 1).split('\\').join('/'), s])));
+      } catch {
+        resolve({});
+      }
+    });
+    child.stdin.end(JSON.stringify(files.map((f) => join(root, f))));
+  });
+}
+
+interface ModelFunction {
+  file: string;
+  start: number;
+  end: number;
+  score: number;
+  riskiestLine: number;
+  riskiestScore: number;
+}
+/** Scores every function with the trained locator (the scorer converts source to its trained statement format). */
+async function scoreFunctions(root: string, files: string[], contents: Map<string, string[]>, locator: Locator, maxFunctions = 600) {
+  const spans = await allFunctionSpans(root, files);
+  const fns: { id: string; file: string; start: number; end: number; source: string }[] = [];
+  for (const [file, list] of Object.entries(spans)) {
+    const lines = contents.get(file);
+    if (!lines) continue;
+    for (const [start, end] of list)
+      fns.push({ id: String(fns.length), file, start, end, source: lines.slice(start - 1, end).join('\n') });
+  }
+  const batch = fns.slice(0, maxFunctions);
+  const { scores, threshold } = await locator.score(batch.map((f) => ({ id: f.id, source: f.source, start: f.start })));
+  const byId = new Map(batch.map((f) => [f.id, f]));
+  const scored: ModelFunction[] = [];
+  for (const s of scores) {
+    const f = byId.get(s.id);
+    if (!f || !s.lines.length) continue;
+    const top = s.lines.indexOf(Math.max(...s.lines));
+    scored.push({ file: f.file, start: f.start, end: f.end, score: s.score, riskiestLine: s.line_numbers?.[top] ?? f.start, riskiestScore: s.lines[top]! });
+  }
+  return { scored, threshold, total: fns.length };
+}
+
+export interface ModelSummary {
+  functionsScored: number;
+  functionsTotal: number;
+  threshold: number;
+  flagged: number;
+  modelOnly: number;
+  error?: string;
+}
+
+/** Appends a marker to the line the trained model rates riskiest, so the AI looks there first. */
+function markRiskiest(snippet: string, m?: ModelFunction) {
+  if (!m || m.riskiestScore < 0.2) return snippet;
+  const tag = String(m.riskiestLine).padStart(4) + '| ';
+  return snippet
+    .split('\n')
+    .map((l) => (l.startsWith(tag) ? `${l}  # <- trained model: riskiest line (${Math.round(m.riskiestScore * 100)}%)` : l))
+    .join('\n');
+}
+
 export function numbered(lines: string[], start: number, end: number) {
   return lines
     .slice(start - 1, end)
@@ -134,8 +218,8 @@ export function numbered(lines: string[], start: number, end: number) {
 
 export async function findCandidates(
   root: string,
-  options: { maxCandidates?: number; maxSnippetLines?: number; external?: ExternalHit[] } = {},
-): Promise<{ candidates: Candidate[]; filesScanned: number; hits: number }> {
+  options: { maxCandidates?: number; maxSnippetLines?: number; external?: ExternalHit[]; locator?: Locator | null } = {},
+): Promise<{ candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
   const maxCandidates = options.maxCandidates ?? 6;
   const maxSnippetLines = options.maxSnippetLines ?? 45;
   const files = (await listSourceFiles(root)).filter((f) => !f.isTest && f.path.endsWith('.py'));
@@ -159,7 +243,27 @@ export async function findCandidates(
     if (same) same.score += 4; // scanner agreement
     else hits.push({ ...ext, score: 5, external: true });
   }
-  if (!hits.length) return { candidates: [], filesScanned: files.length, hits: 0 };
+  // Trained model: scores every function, so it can rank regex hits and surface code the rules miss.
+  let modelFns: ModelFunction[] = [];
+  let model: ModelSummary | undefined;
+  if (options.locator) {
+    try {
+      const r = await scoreFunctions(root, files.map((f) => f.path), contents, options.locator);
+      modelFns = r.scored;
+      model = { functionsScored: r.scored.length, functionsTotal: r.total, threshold: r.threshold,
+        flagged: r.scored.filter((f) => f.score >= r.threshold).length, modelOnly: 0 };
+    } catch (error) {
+      model = { functionsScored: 0, functionsTotal: 0, threshold: 0, flagged: 0, modelOnly: 0,
+        error: error instanceof Error ? error.message.slice(0, 200) : 'locator failed' };
+    }
+  }
+  const threshold = model?.threshold || 1;
+  const modelFor = (file: string, line: number) =>
+    modelFns
+      .filter((f) => f.file === file && f.start <= line && line <= f.end)
+      .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+  if (!hits.length && !modelFns.some((f) => f.score >= threshold))
+    return { candidates: [], filesScanned: files.length, hits: 0, model };
 
   // Function spans for every hit, in one python process.
   const wanted = new Map<string, number[]>();
@@ -174,11 +278,13 @@ export async function findCandidates(
     let score = h.score;
     if (USER_INPUT.test(body)) score += 4; // user input reaches the same function
     if (/@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/.test(body)) score += 2;
+    const m = modelFor(h.file, h.line);
+    if (m) score += Math.round(m.score * 10); // trained model agrees this function is risky
     if (end - start + 1 > maxSnippetLines) {
       start = Math.max(start, h.line - Math.floor(maxSnippetLines / 2));
       end = Math.min(end, start + maxSnippetLines - 1);
     }
-    return { ...h, score, startLine: start, endLine: end };
+    return { ...h, score, startLine: start, endLine: end, model: m };
   });
   // One candidate per function: keep the highest-scoring hit, sum evidence from the rest.
   const byFunction = new Map<string, (typeof scored)[number] & { rules: string[] }>();
@@ -191,6 +297,23 @@ export async function findCandidates(
       if (h.score > prev.score) Object.assign(prev, { ...h, rules: prev.rules, score: h.score + 1 });
       else prev.score += 1;
     }
+  }
+  // Functions only the model flags (no regex hit): its strongest few become candidates too.
+  const covered = new Set([...byFunction.values()].map((h) => h.model));
+  const modelOnly = modelFns
+    .filter((f) => f.score >= threshold && !covered.has(f))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+  if (model) model.modelOnly = modelOnly.length;
+  for (const f of modelOnly) {
+    let [start, end] = [f.start, f.end];
+    if (end - start + 1 > maxSnippetLines) {
+      start = Math.max(start, f.riskiestLine - Math.floor(maxSnippetLines / 2));
+      end = Math.min(end, start + maxSnippetLines - 1);
+    }
+    byFunction.set(`${f.file}:${start}`, { file: f.file, line: f.riskiestLine, cwe: 'CWE-noinfo',
+      category: 'Flagged by trained model', rule: 'trained-model', score: Math.round(f.score * 10) + 2,
+      external: false, startLine: start, endLine: end, model: f, rules: ['trained-model'] });
   }
   const candidates = [...byFunction.values()]
     .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file) || a.line - b.line)
@@ -206,9 +329,10 @@ export async function findCandidates(
       rule: h.rules.join('+'),
       score: h.score,
       source: 'scanner' as const,
-      snippet: numbered(contents.get(h.file)!, h.startLine, h.endLine),
+      snippet: markRiskiest(numbered(contents.get(h.file)!, h.startLine, h.endLine), h.model),
+      ...(h.model ? { modelScore: Math.round(h.model.score * 100) / 100 } : {}),
     }));
-  return { candidates, filesScanned: files.length, hits: hits.length };
+  return { candidates, filesScanned: files.length, hits: hits.length, model };
 }
 
 /** Imports at the top of a file (needed so the AI can write a correct patch). */

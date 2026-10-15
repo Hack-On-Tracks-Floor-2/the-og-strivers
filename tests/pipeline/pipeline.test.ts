@@ -42,6 +42,33 @@ describe('search funnel (local, zero AI tokens)', () => {
     expect(candidates[0].snippet).toContain('def find_user');
     expect(candidates[0].snippet).not.toContain('def connect'); // function-level, not whole file
   });
+  it('uses the trained locator to boost hits, mark the riskiest line and add model-only candidates', async () => {
+    // Fake locator: every function gets 0.9, riskiest on its last line.
+    const locator = {
+      score: async (fns: { id: string; source: string; start: number }[]) => ({
+        threshold: 0.5,
+        scores: fns.map((f) => ({
+          id: f.id,
+          score: 0.9,
+          lines: [0.05, 0.9],
+          line_numbers: [f.start, f.start + f.source.split('\n').length - 1],
+        })),
+      }),
+    };
+    const { candidates, model } = await findCandidates(FIXTURE, { locator });
+    expect(model).toMatchObject({ threshold: 0.5 });
+    expect(model!.functionsScored).toBeGreaterThan(1);
+    const sql = candidates.find((c) => c.cwe === 'CWE-89')!;
+    expect(sql.modelScore).toBe(0.9);
+    expect(sql.snippet).toContain('# <- trained model: riskiest line (90%)');
+    expect(candidates.some((c) => c.rule === 'trained-model')).toBe(true); // e.g. connect(), no regex hit
+  });
+  it('falls back to rules only when the locator fails', async () => {
+    const locator = { score: async () => { throw new Error('model offline'); } };
+    const { candidates, model } = await findCandidates(FIXTURE, { locator });
+    expect(model?.error).toContain('model offline');
+    expect(candidates[0]).toMatchObject({ file: 'vulnapp/store.py', cwe: 'CWE-89' });
+  });
 });
 
 describe('patch edits and diffs', () => {

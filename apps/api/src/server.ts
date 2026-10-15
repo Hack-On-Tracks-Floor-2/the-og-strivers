@@ -8,6 +8,7 @@ import { createAiClient } from './ai/client.js';
 import { githubIngestion, WorkspaceStore } from './repositories/clone.js';
 import { DockerSandbox } from './verification/docker.js';
 import { createPipeline } from './pipeline/orchestrator.js';
+import { createLocator } from './scanners/locator.js';
 // npm workspace commands run in apps/api, so resolve config from project root.
 const root = process.cwd().endsWith('api') ? resolve(process.cwd(), '../..') : process.cwd();
 config({ path: resolve(root, '.env'), quiet: true });
@@ -58,6 +59,7 @@ const pipeline = createPipeline({
   store,
   sandbox,
   ai: createAiClient(process.env),
+  locator: createLocator(process.env),
   tokenBudget: Number(process.env.RUN_TOKEN_BUDGET) > 0 ? Number(process.env.RUN_TOKEN_BUDGET) : 30_000,
 });
 const capability = await pipeline.status();

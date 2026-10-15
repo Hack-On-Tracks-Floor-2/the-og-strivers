@@ -1,6 +1,7 @@
 import type { Severity } from './types.js';
 import type { AiClient, AiUsage, TokenBudget } from '../ai/client.js';
-import { findCandidates, type Candidate, type ExternalHit } from '../scanners/funnel.js';
+import { findCandidates, type Candidate, type ExternalHit, type ModelSummary } from '../scanners/funnel.js';
+import type { Locator } from '../scanners/locator.js';
 
 export interface DetectedIssue {
   candidate: Candidate;
@@ -58,20 +59,23 @@ export async function detectVulnerabilities(input: {
   budget: TokenBudget;
   signal: AbortSignal;
   external?: ExternalHit[];
+  locator?: Locator | null;
   onUsage?: (usage: AiUsage, note: string) => void | Promise<void>;
-}): Promise<{ issues: DetectedIssue[]; candidates: Candidate[]; filesScanned: number; hits: number }> {
-  const search = await findCandidates(input.root, { external: input.external });
+}): Promise<{ issues: DetectedIssue[]; candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
+  const search = await findCandidates(input.root, { external: input.external, locator: input.locator });
   if (!search.candidates.length) return { issues: [], ...search };
   const data = search.candidates
-    .map((c) => `### ${c.id} ${c.file}:${c.startLine}-${c.endLine} (scanner: ${c.category}, ${c.cwe})\n${c.snippet}`)
+    .map((c) => `### ${c.id} ${c.file}:${c.startLine}-${c.endLine} (${c.rule === 'trained-model' ? 'trained model' : 'scanner'}: ${c.category}, ${c.cwe}${c.modelScore !== undefined ? `, model risk ${Math.round(c.modelScore * 100)}%` : ''})\n${c.snippet}`)
     .join('\n\n');
   const { value, usage } = await input.ai.completeJSON<AiVerdict>(
     {
       task: 'detect',
       instructions:
-        'Each block is a code region flagged by a static scanner. Decide which are REAL, exploitable security vulnerabilities ' +
+        'Each block is a code region flagged by a static scanner and/or a vulnerability model trained on real CVE fixes ' +
+        '(a "# <- trained model" comment marks the line it rates riskiest; it is a hint, not proof). ' +
+        'Decide which are REAL, exploitable security vulnerabilities ' +
         '(attacker-controlled input reaches the dangerous call without adequate validation). Reject false positives. ' +
-        'Return one verdict per candidate id. Use the exact line numbers shown. Keep rootCause and recommendation under 60 words each.',
+        'For model-only blocks, name the precise CWE yourself. Return one verdict per candidate id. Use the exact line numbers shown. Keep rootCause and recommendation under 60 words each.',
       data,
       schema: SCHEMA,
       maxOutputTokens: 1_500,

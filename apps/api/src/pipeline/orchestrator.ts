@@ -25,7 +25,8 @@ import { evidenceService } from '../services/evidence.js';
 import { compareSuites, parseJUnit } from '../verification/junit.js';
 import type { ExecutionRequest } from '../verification/sandbox.js';
 import type { SandboxRun } from '../verification/docker.js';
-import type { ExternalHit } from '../scanners/funnel.js';
+import type { ExternalHit, ModelSummary } from '../scanners/funnel.js';
+import type { Locator } from '../scanners/locator.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
@@ -39,6 +40,8 @@ export interface PipelineOptions {
   store: WorkspaceStore;
   sandbox: PipelineSandbox;
   ai: AiClient | null;
+  /** Optional trained vulnerability locator (see ml/). */
+  locator?: Locator | null;
   tokenBudget?: number;
   maxAttempts?: number;
   testTimeoutMs?: number;
@@ -53,6 +56,12 @@ export interface Pipeline {
 
 const tail = (text: string, n = 20_000) => (text.length > n ? `…(truncated)\n${text.slice(-n)}` : text);
 /** The useful part of a pytest failure: error lines ("E …"), failing test lines and the summary. */
+function modelNote(model?: ModelSummary) {
+  if (!model) return '';
+  if (model.error) return ` · trained model unavailable (${model.error.slice(0, 80)})`;
+  return ` · trained model scored ${model.functionsScored} functions, flagged ${model.flagged} (${model.modelOnly} missed by rules)`;
+}
+
 export function pytestEssence(logs: string, max = 1_400) {
   const lines = logs.split(/\r?\n/);
   const keep = lines.filter((l) => /^(E\s|FAILED\s|ERROR\s|>\s)/.test(l) || /Error:|Exception:|assert /.test(l));
@@ -271,11 +280,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       } catch {
         external = [];
       }
-      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, onUsage });
+      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, onUsage });
       await event(
         run,
         'stage_completed',
-        `Search funnel: ${detection.filesScanned} source files → ${detection.hits} scanner hits (Bandit ${external.length}) → ${detection.candidates.length} snippets sent to AI → ${detection.issues.length} confirmed.`,
+        `Search funnel: ${detection.filesScanned} source files → ${detection.hits} scanner hits (Bandit ${external.length})${modelNote(detection.model)} → ${detection.candidates.length} snippets sent to AI → ${detection.issues.length} confirmed.`,
       );
       if (!detection.issues.length)
         throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');

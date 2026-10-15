@@ -10,9 +10,11 @@ export interface FunctionScore {
   id: string;
   score: number;
   lines: number[];
+  /** Source line number of each scored statement (when scored from source). */
+  line_numbers?: number[];
 }
 export interface Locator {
-  score(functions: { id: string; lines: string[] }[]): Promise<{ scores: FunctionScore[]; threshold: number }>;
+  score(functions: ({ id: string; lines: string[] } | { id: string; source: string; start: number })[]): Promise<{ scores: FunctionScore[]; threshold: number }>;
 }
 
 export function createLocator(env: NodeJS.ProcessEnv): Locator | null {
