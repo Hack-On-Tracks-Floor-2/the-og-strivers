@@ -9,6 +9,8 @@ import {
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { PageTitle, ErrorBox, Loading, Status, date } from '../components/ui';
+import { useAuth } from '../features/auth';
+import { RepositoryMLReview } from '../components/ml/RepositoryMLReview';
 
 type Language = MLModelCatalog['models'][number]['language'];
 const languageName: Record<Language, string> = {
@@ -20,6 +22,7 @@ const languageName: Record<Language, string> = {
 const percent = (value: number) => `${(value * 100).toFixed(2)}%`;
 
 export function MLIntelligencePage() {
+  const { user } = useAuth();
   const catalog = useResource(() => api('/ml/models', MLModelCatalogSchema));
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState<Language>('java');
@@ -107,8 +110,11 @@ export function MLIntelligencePage() {
       <PageTitle
         eyebrow="EXPERIMENTAL / LANGUAGE-SPECIFIC CLASSIFICATION"
         title="ML INTELLIGENCE"
-        description="Inspect evaluated models and classify source text. Predictions are experimental category estimates and do not confirm vulnerabilities."
+        description={user?.role === 'reviewer'
+          ? 'Review automatic predictions attached to repository findings. Predictions are experimental estimates, not confirmed vulnerabilities.'
+          : 'Inspect evaluated models and explore source-text classification. Repository findings remain in the reviewer workspace.'}
       />
+      {user?.role === 'reviewer' && <RepositoryMLReview />}
       {catalog.loading ? (
         <Loading />
       ) : catalog.error ? (
@@ -210,7 +216,8 @@ export function MLIntelligencePage() {
                 production repositories has not been established. Disabled models remain visible
                 for evaluation and cannot classify snippets here.
               </p>
-              <section className="panel details">
+              <details className="panel details">
+                <summary>Model Playground</summary>
                 <div className="section-header">
                   <div>
                     <span className="eyebrow">REAL MODEL INFERENCE</span>
@@ -308,7 +315,7 @@ export function MLIntelligencePage() {
                     <code>{result.modelVersion}</code>
                   </section>
                 )}
-              </section>
+              </details>
               <details className="panel details">
                 <summary>Model scope and limitations</summary>
                 <ul>

@@ -26,7 +26,7 @@ function normalizeCwe(value: string | null | undefined): string | null {
   return match ? `CWE-${Number(match[1])}` : null;
 }
 
-function findingLanguage(finding: ScannerFinding): string | null {
+export function findingLanguage(finding: ScannerFinding): string | null {
   const aliases: Record<string, string> = {
     python: 'python',
     py: 'python',
@@ -46,11 +46,11 @@ function findingLanguage(finding: ScannerFinding): string | null {
   return extension && Object.hasOwn(aliases, extension) ? aliases[extension] : null;
 }
 
-/** Optional adapter: callers supply source text. This function never opens the finding's path. */
+/** Callers supply source text. This function never opens the finding's path. */
 export async function enrichScannerFinding<T extends ScannerFinding>(
   finding: T,
   sourceText: string,
-  options: { predict?: typeof classifySource } = {},
+  options: { predict?: typeof classifySource; preferFindingRange?: boolean } = {},
 ): Promise<{ finding: T; ml: MLEnrichment }> {
   const scannerCwe = normalizeCwe(finding.cwe);
   const result = (ml: Omit<MLEnrichment, 'scannerCwe'>) => ({
@@ -109,6 +109,17 @@ export async function enrichScannerFinding<T extends ScannerFinding>(
   const after = Math.min(20, contextBudget - before);
   let start = Math.max(0, findingStart - before);
   let end = Math.min(lines.length, findingEnd + after);
+  if (options.preferFindingRange) {
+    // A complete small file or the scanner's enclosing-function span avoids cutting Python blocks.
+    // Oversized findings were rejected above; never omit the finding's own lines to obtain a score.
+    if (lines.length <= maxLines && sourceText.length <= maxCharacters) {
+      start = 0;
+      end = lines.length;
+    } else {
+      start = findingStart;
+      end = findingEnd;
+    }
+  }
   let code = lines.slice(start, end).join('\n');
   while (code.length > maxCharacters && start < findingStart) {
     start++;
@@ -119,6 +130,12 @@ export async function enrichScannerFinding<T extends ScannerFinding>(
     code = lines.slice(start, end).join('\n');
   }
   const sourceRange = { startLine: start + 1, endLine: end };
+  if (options.preferFindingRange && language === 'python') {
+    const indents = code.split('\n').filter((line) => line.trim()).map((line) => /^[\t ]*/.exec(line)![0]);
+    let prefix = indents[0] ?? '';
+    for (const indent of indents) while (prefix && !indent.startsWith(prefix)) prefix = prefix.slice(0, -1);
+    if (prefix) code = code.split('\n').map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : line).join('\n');
+  }
   try {
     const prediction = await (options.predict ?? classifySource)({
       code,

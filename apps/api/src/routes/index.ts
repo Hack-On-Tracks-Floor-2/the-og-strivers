@@ -281,6 +281,15 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     res.send(row.content);
   });
   router.get('/runs/:id', requireRole('reviewer'), async (req, res) => send(res, await accessibleRun(req)));
+  router.get('/runs/:id/ml-findings', requireRole('reviewer'), async (req, res) => {
+    const run = await accessibleRun(req);
+    const result = await db.query<{ finding: unknown; ml: unknown | null }>(
+      `SELECT f.document AS finding, m.document AS ml FROM findings f
+       LEFT JOIN finding_ml m ON m.finding_id=f.id AND m.run_id=f.run_id
+       WHERE f.run_id=$1 ORDER BY f.document->>'createdAt' ASC`, [run.id],
+    );
+    send(res, result.rows);
+  });
   for (const [path, table] of Object.entries({
     events: 'events',
     findings: 'findings',
