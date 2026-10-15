@@ -1,29 +1,38 @@
 import { randomUUID } from 'node:crypto';
 import { AnalysisRunSchema, RunEventSchema, type User } from '@proofpatch/shared';
 import type { Database } from '../database/index.js';
-export async function createAnalysisRun(db: Database, user: User, repositoryId: string) {
+export async function createAnalysisRun(
+  db: Database,
+  user: User,
+  repositoryId: string,
+  available = false,
+) {
   const now = new Date().toISOString();
   const run = AnalysisRunSchema.parse({
     id: randomUUID(),
     repositoryId,
     ownerId: user.id,
-    status: 'not_configured',
-    capability: 'not_configured',
+    status: available ? 'queued' : 'not_configured',
+    capability: available ? 'available' : 'not_configured',
     error: null,
     createdAt: now,
     updatedAt: now,
   });
-  const events = [
-    {
-      kind: 'job_received',
-      message: 'Analysis request registered. No repository code has been cloned or executed.',
-    },
-    {
-      kind: 'capability_unavailable',
-      message:
-        'Agent integration pending. Configure repository intelligence, detection and isolated verification adapters to enable analysis.',
-    },
-  ].map((e) =>
+  const events = (
+    available
+      ? [{ kind: 'job_received', message: 'Analysis request registered and queued for the agent pipeline.' }]
+      : [
+          {
+            kind: 'job_received',
+            message: 'Analysis request registered. No repository code has been cloned or executed.',
+          },
+          {
+            kind: 'capability_unavailable',
+            message:
+              'Agent integration pending. Configure repository intelligence, detection and isolated verification adapters to enable analysis.',
+          },
+        ]
+  ).map((e) =>
     RunEventSchema.parse({
       ...e,
       id: randomUUID(),

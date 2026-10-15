@@ -1,13 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Play, Circle, Check, ArrowUpRight, Info } from 'lucide-react';
-import { RepositorySchema, AnalysisRunSchema, RunEventSchema } from '@proofpatch/shared';
+import {
+  RepositorySchema,
+  AnalysisRunSchema,
+  RunEventSchema,
+  HealthSchema,
+  type AnalysisRun,
+  type RunEvent,
+} from '@proofpatch/shared';
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { PageTitle, EmptyState, ErrorBox, Loading, Status, Eyebrow, date } from '../components/ui';
+const ACTIVE = ['received', 'queued', 'mapping', 'analyzing', 'patching', 'verifying'];
+const STEPS: [string, AnalysisRun['status'][]][] = [
+  ['Request received', ['received', 'queued']],
+  ['Clone & source mapping', ['mapping']],
+  ['Baseline tests & vulnerability search', ['analyzing']],
+  ['Patch generation', ['patching']],
+  ['Exploit test & regression proof', ['verifying']],
+  ['Security review', ['needs_review', 'verified']],
+];
+function stepState(run: AnalysisRun | undefined, index: number) {
+  if (!run || run.status === 'not_configured') return index === 0 ? 'done' : 'idle';
+  const current = STEPS.findIndex(([, statuses]) => statuses.includes(run.status));
+  if (run.status === 'failed') return 'failed';
+  if (index < current || (index === current && index === STEPS.length - 1)) return 'done';
+  return index === current ? 'active' : 'idle';
+}
 export function ScannerPage() {
   const [params, setParams] = useSearchParams();
+  const health = useResource(() => api('/health', HealthSchema));
+  const available = health.data?.analysis === 'available';
   const state = useResource(async () => ({
     repos: await api('/repositories', z.array(RepositorySchema)),
     runs: await api('/runs', z.array(AnalysisRunSchema)),
@@ -21,7 +46,35 @@ export function ScannerPage() {
       selected ? api(`/runs/${selected}/events`, z.array(RunEventSchema)) : Promise.resolve([]),
     [selected],
   );
-  const run = state.data?.runs.find((r) => r.id === selected);
+  const [live, setLive] = useState<{ run?: AnalysisRun; events?: RunEvent[] }>({});
+  const baseRun = state.data?.runs.find((r) => r.id === selected);
+  const run = live.run?.id === selected ? live.run : baseRun;
+  const eventList = live.run?.id === selected && live.events ? live.events : events.data;
+  // Poll the selected run while it is executing, without flashing loading states.
+  useEffect(() => {
+    setLive({});
+    if (!selected) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const [r, e] = await Promise.all([
+          api(`/runs/${selected}`, AnalysisRunSchema),
+          api(`/runs/${selected}/events`, z.array(RunEventSchema)),
+        ]);
+        if (!alive) return;
+        setLive({ run: r, events: e });
+        if (ACTIVE.includes(r.status)) timer = setTimeout(tick, 2000);
+      } catch {
+        if (alive) timer = setTimeout(tick, 4000);
+      }
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [selected]);
   async function create() {
     setError('');
     setBusy(true);
@@ -44,17 +97,21 @@ export function ScannerPage() {
         title="SECURITY SCANNER"
         description="Request an analysis. Follow the real state of every job."
       />
-      <div className="capability-banner">
-        <Info size={19} />
-        <div>
-          <strong>Agent integration pending</strong>
-          <p>
-            Jobs are saved to your workspace. Repository inspection and automated scanning are not
-            configured.
-          </p>
+      {!health.loading && (
+        <div className="capability-banner">
+          <Info size={19} />
+          <div>
+            <strong>{available ? 'Agent pipeline ready' : 'Agent pipeline unavailable'}</strong>
+            <p>
+              {available
+                ? `Clones the repository, runs its tests in an offline Docker sandbox, locates the bug, writes a patch and proves it. AI: ${health.data?.ai?.join(' → ') ?? ''}.`
+                : (health.data?.reason ??
+                  'Repository inspection and automated scanning are not configured.')}
+            </p>
+          </div>
+          <Status value={available ? 'available' : 'not_configured'} />
         </div>
-        <Status value="not_configured" />
-      </div>
+      )}
       {error && <ErrorBox message={error} />}
       <section className="panel details">
         <Eyebrow>NEW ANALYSIS JOB</Eyebrow>
@@ -82,7 +139,7 @@ export function ScannerPage() {
             onClick={create}
           >
             <Play size={16} />
-            {busy ? 'Creating…' : 'Create analysis job'}
+            {busy ? 'Starting…' : available ? 'Find, patch & prove' : 'Create analysis job'}
           </button>
         </div>
         {!state.data?.repos.length && !state.loading && (
@@ -135,29 +192,33 @@ export function ScannerPage() {
               {run && <Status value={run.status} />}
             </div>
             <div className="pipeline">
-              {[
-                'Request received',
-                'Source mapping',
-                'Vulnerability analysis',
-                'Patch generation',
-                'Verification',
-                'Security review',
-              ].map((step, i) => (
-                <div key={step} className={i === 0 ? 'pipeline-step recorded' : 'pipeline-step'}>
-                  {i === 0 ? <Check size={16} /> : <Circle size={13} />}
-                  <span>{step}</span>
-                  <small>{i === 0 ? 'RECORDED' : 'NOT EXECUTED'}</small>
-                </div>
-              ))}
+              {STEPS.map(([step], i) => {
+                const s = stepState(run, i);
+                return (
+                  <div key={step} className={s === 'done' ? 'pipeline-step recorded' : 'pipeline-step'}>
+                    {s === 'done' ? <Check size={16} /> : <Circle size={13} />}
+                    <span>{step}</span>
+                    <small>
+                      {s === 'done'
+                        ? 'COMPLETED'
+                        : s === 'active'
+                          ? 'RUNNING…'
+                          : s === 'failed'
+                            ? 'STOPPED'
+                            : 'NOT EXECUTED'}
+                    </small>
+                  </div>
+                );
+              })}
             </div>
             {run?.error && <ErrorBox message={run.error} />}
             <Eyebrow>RECORDED EVENTS</Eyebrow>
-            {events.loading ? (
+            {events.loading && !eventList ? (
               <Loading />
-            ) : events.error ? (
+            ) : events.error && !eventList ? (
               <ErrorBox message={events.error} retry={events.reload} />
             ) : (
-              events.data?.map((event) => (
+              eventList?.map((event) => (
                 <div className="event-item" key={event.id}>
                   <span className="mono">{date(event.createdAt)}</span>
                   <p>{event.message}</p>
