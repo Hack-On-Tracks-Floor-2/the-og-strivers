@@ -1,0 +1,12 @@
+{
+  "patchSource": "deterministic",
+  "aiReason": "GROQ_API_KEY is not configured; used the explicitly labeled deterministic patch.",
+  "aiUsage": null,
+  "edits": [
+    {
+      "file": "src/reports.cjs",
+      "search": "  return readFileSync(join(root, name), 'utf8');",
+      "replace": "  const { realpathSync } = require('node:fs');\n  const { relative, isAbsolute, sep } = require('node:path');\n  const base = realpathSync(root);\n  const target = realpathSync(join(base, name));\n  const within = relative(base, target);\n  if (within === '..' || within.startsWith('..' + sep) || isAbsolute(within)) {\n    throw Object.assign(new Error('Report path escapes its root'), { code: 'EACCES' });\n  }\n  return readFileSync(target, 'utf8');"
+    }
+  ]
+}

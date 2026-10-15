@@ -1,0 +1,45 @@
+["C:\\Program Files\\nodejs\\node.exe","--test","--test-reporter=tap","--test-reporter=junit","--test-reporter-destination=stdout","--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\baseline.junit.xml","test/functional.test.cjs"]
+CWD: C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable
+Exit: 0
+TAP version 13
+# Subtest: reads an existing report
+ok 1 - reads an existing report
+  ---
+  duration_ms: 1.9244
+  type: 'test'
+  ...
+# Subtest: reads nested reports
+ok 2 - reads nested reports
+  ---
+  duration_ms: 2.0772
+  type: 'test'
+  ...
+# Subtest: supports spaces in report names
+ok 3 - supports spaces in report names
+  ---
+  duration_ms: 1.278
+  type: 'test'
+  ...
+# Subtest: preserves empty report contents
+ok 4 - preserves empty report contents
+  ---
+  duration_ms: 0.8294
+  type: 'test'
+  ...
+# Subtest: preserves missing-file errors
+ok 5 - preserves missing-file errors
+  ---
+  duration_ms: 1.1127
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 162.2457
+
+STDERR:

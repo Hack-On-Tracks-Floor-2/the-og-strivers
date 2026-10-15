@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="blocks parent directory traversal" time="0.003052" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs" failure="Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER">
+		<failure type="testCodeFailure" message="Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER">
+[Error [ERR_TEST_FAILURE]: Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER
+      at assertBlocked (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:30:10)
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:32:49)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="blocks sibling with the same directory prefix" time="0.002373" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs" failure="Traversal leaked controlled data: CONTROLLED_BACKUP_MARKER">
+		<failure type="testCodeFailure" message="Traversal leaked controlled data: CONTROLLED_BACKUP_MARKER">
+[Error [ERR_TEST_FAILURE]: Traversal leaked controlled data: CONTROLLED_BACKUP_MARKER] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Traversal leaked controlled data: CONTROLLED_BACKUP_MARKER
+      at assertBlocked (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:30:10)
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:33:61)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="blocks traversal through a nested directory" time="0.002484" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs" failure="Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER">
+		<failure type="testCodeFailure" message="Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER">
+[Error [ERR_TEST_FAILURE]: Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER
+      at assertBlocked (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:30:10)
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\security.test.cjs:34:59)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 3 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 172.0962 -->
+</testsuites>

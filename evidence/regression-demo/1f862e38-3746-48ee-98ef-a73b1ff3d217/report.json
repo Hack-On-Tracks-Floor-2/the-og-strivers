@@ -1,0 +1,207 @@
+{
+  "runId": "1f862e38-3746-48ee-98ef-a73b1ff3d217",
+  "createdAt": "2026-10-15T13:20:35.390Z",
+  "verdict": "VERIFIED",
+  "scenario": "CWE-22 path traversal",
+  "patchSource": "deterministic",
+  "aiReason": "GROQ_API_KEY is not configured; used the explicitly labeled deterministic patch.",
+  "aiUsage": null,
+  "execution": "Real Node.js subprocesses on an authored, trusted local fixture; this is not a Docker sandbox for downloaded repositories.",
+  "nodeVersion": "v24.20.0",
+  "runDir": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217",
+  "unifiedDiff": "--- a/src/reports.cjs\n+++ b/src/reports.cjs\n@@ -3,7 +3,15 @@\n \n // Deliberately vulnerable, local demonstration fixture. Never deploy this module.\n function readReport(root, name) {\n-  return readFileSync(join(root, name), 'utf8');\n+  const { realpathSync } = require('node:fs');\n+  const { relative, isAbsolute, sep } = require('node:path');\n+  const base = realpathSync(root);\n+  const target = realpathSync(join(base, name));\n+  const within = relative(base, target);\n+  if (within === '..' || within.startsWith('..' + sep) || isAbsolute(within)) {\n+    throw Object.assign(new Error('Report path escapes its root'), { code: 'EACCES' });\n+  }\n+  return readFileSync(target, 'utf8');\n }\n \n module.exports = { readReport };\n",
+  "integrity": {
+    "fixtureSourceUnchanged": true,
+    "functionalTestsUnchanged": true,
+    "securityTestsIdentical": true,
+    "functionalTestSha256": "2494454ea8e7e67caedd1e2eda094d4d1a14a7964c246127c000cb75ed90d554",
+    "securityTestSha256": "da01e1e867275d13f62a0a1eee5d1fa186fd5be909c1e6c4e70a3b2f63f69f97"
+  },
+  "comparison": {
+    "broken": [],
+    "fixed": [],
+    "ok": true
+  },
+  "stages": [
+    {
+      "stage": "baseline",
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "argv": [
+        "--test",
+        "--test-reporter=tap",
+        "--test-reporter=junit",
+        "--test-reporter-destination=stdout",
+        "--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\baseline.junit.xml",
+        "test/functional.test.cjs"
+      ],
+      "cwd": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable",
+      "startedAt": "2026-10-15T13:20:34.186Z",
+      "durationMs": 269,
+      "exitCode": 0,
+      "signal": null,
+      "error": null,
+      "stdout": "TAP version 13\n# Subtest: reads an existing report\nok 1 - reads an existing report\n  ---\n  duration_ms: 1.9244\n  type: 'test'\n  ...\n# Subtest: reads nested reports\nok 2 - reads nested reports\n  ---\n  duration_ms: 2.0772\n  type: 'test'\n  ...\n# Subtest: supports spaces in report names\nok 3 - supports spaces in report names\n  ---\n  duration_ms: 1.278\n  type: 'test'\n  ...\n# Subtest: preserves empty report contents\nok 4 - preserves empty report contents\n  ---\n  duration_ms: 0.8294\n  type: 'test'\n  ...\n# Subtest: preserves missing-file errors\nok 5 - preserves missing-file errors\n  ---\n  duration_ms: 1.1127\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 162.2457\n",
+      "stderr": "",
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "id": "test::reads an existing report",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::reads nested reports",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::supports spaces in report names",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::preserves empty report contents",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::preserves missing-file errors",
+            "outcome": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "security-before",
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "argv": [
+        "--test",
+        "--test-reporter=tap",
+        "--test-reporter=junit",
+        "--test-reporter-destination=stdout",
+        "--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\security-before.junit.xml",
+        "test/security.test.cjs"
+      ],
+      "cwd": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable",
+      "startedAt": "2026-10-15T13:20:34.464Z",
+      "durationMs": 265,
+      "exitCode": 1,
+      "signal": null,
+      "error": null,
+      "stdout": "TAP version 13\n# Subtest: blocks parent directory traversal\nnot ok 1 - blocks parent directory traversal\n  ---\n  duration_ms: 3.052\n  type: 'test'\n  location: 'C:\\\\Users\\\\Aadarsh Tiwari\\\\Downloads\\\\r2Agnel\\\\.data\\\\regression-engine\\\\evidence\\\\regression-demo\\\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\\\vulnerable\\\\test\\\\security.test.cjs:32:1'\n  failureType: 'testCodeFailure'\n  error: 'Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  operator: 'fail'\n  stack: |-\n    assertBlocked (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:30:10)\n    TestContext.<anonymous> (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:32:49)\n    Test.runInAsyncScope (node:async_hooks:227:14)\n    Test.run (node:internal/test_runner/test:1397:25)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)\n  ...\n# Subtest: blocks sibling with the same directory prefix\nnot ok 2 - blocks sibling with the same directory prefix\n  ---\n  duration_ms: 2.3734\n  type: 'test'\n  location: 'C:\\\\Users\\\\Aadarsh Tiwari\\\\Downloads\\\\r2Agnel\\\\.data\\\\regression-engine\\\\evidence\\\\regression-demo\\\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\\\vulnerable\\\\test\\\\security.test.cjs:33:1'\n  failureType: 'testCodeFailure'\n  error: 'Traversal leaked controlled data: CONTROLLED_BACKUP_MARKER'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  operator: 'fail'\n  stack: |-\n    assertBlocked (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:30:10)\n    TestContext.<anonymous> (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:33:61)\n    Test.runInAsyncScope (node:async_hooks:227:14)\n    Test.run (node:internal/test_runner/test:1397:25)\n    async Test.processPendingSubtests (node:internal/test_runner/test:969:7)\n  ...\n# Subtest: blocks traversal through a nested directory\nnot ok 3 - blocks traversal through a nested directory\n  ---\n  duration_ms: 2.484\n  type: 'test'\n  location: 'C:\\\\Users\\\\Aadarsh Tiwari\\\\Downloads\\\\r2Agnel\\\\.data\\\\regression-engine\\\\evidence\\\\regression-demo\\\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\\\vulnerable\\\\test\\\\security.test.cjs:34:1'\n  failureType: 'testCodeFailure'\n  error: 'Traversal leaked controlled data: CONTROLLED_PRIVATE_MARKER'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  operator: 'fail'\n  stack: |-\n    assertBlocked (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:30:10)\n    TestContext.<anonymous> (C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\vulnerable\\test\\security.test.cjs:34:59)\n    Test.runInAsyncScope (node:async_hooks:227:14)\n    Test.run (node:internal/test_runner/test:1397:25)\n    async Test.processPendingSubtests (node:internal/test_runner/test:969:7)\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 0\n# fail 3\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 172.0962\n",
+      "stderr": "",
+      "summary": {
+        "total": 3,
+        "passed": 0,
+        "failed": 3,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "id": "test::blocks parent directory traversal",
+            "outcome": "failed"
+          },
+          {
+            "id": "test::blocks sibling with the same directory prefix",
+            "outcome": "failed"
+          },
+          {
+            "id": "test::blocks traversal through a nested directory",
+            "outcome": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "security-after",
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "argv": [
+        "--test",
+        "--test-reporter=tap",
+        "--test-reporter=junit",
+        "--test-reporter-destination=stdout",
+        "--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\security-after.junit.xml",
+        "test/security.test.cjs"
+      ],
+      "cwd": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\patched",
+      "startedAt": "2026-10-15T13:20:34.757Z",
+      "durationMs": 301,
+      "exitCode": 0,
+      "signal": null,
+      "error": null,
+      "stdout": "TAP version 13\n# Subtest: blocks parent directory traversal\nok 1 - blocks parent directory traversal\n  ---\n  duration_ms: 7.8121\n  type: 'test'\n  ...\n# Subtest: blocks sibling with the same directory prefix\nok 2 - blocks sibling with the same directory prefix\n  ---\n  duration_ms: 6.0997\n  type: 'test'\n  ...\n# Subtest: blocks traversal through a nested directory\nok 3 - blocks traversal through a nested directory\n  ---\n  duration_ms: 4.1385\n  type: 'test'\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 193.9621\n",
+      "stderr": "",
+      "summary": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "id": "test::blocks parent directory traversal",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::blocks sibling with the same directory prefix",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::blocks traversal through a nested directory",
+            "outcome": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "regression",
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "argv": [
+        "--test",
+        "--test-reporter=tap",
+        "--test-reporter=junit",
+        "--test-reporter-destination=stdout",
+        "--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\regression.junit.xml",
+        "test/functional.test.cjs"
+      ],
+      "cwd": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\patched",
+      "startedAt": "2026-10-15T13:20:35.060Z",
+      "durationMs": 323,
+      "exitCode": 0,
+      "signal": null,
+      "error": null,
+      "stdout": "TAP version 13\n# Subtest: reads an existing report\nok 1 - reads an existing report\n  ---\n  duration_ms: 7.0569\n  type: 'test'\n  ...\n# Subtest: reads nested reports\nok 2 - reads nested reports\n  ---\n  duration_ms: 8.2297\n  type: 'test'\n  ...\n# Subtest: supports spaces in report names\nok 3 - supports spaces in report names\n  ---\n  duration_ms: 7.1521\n  type: 'test'\n  ...\n# Subtest: preserves empty report contents\nok 4 - preserves empty report contents\n  ---\n  duration_ms: 5.1625\n  type: 'test'\n  ...\n# Subtest: preserves missing-file errors\nok 5 - preserves missing-file errors\n  ---\n  duration_ms: 6.2736\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 198.0246\n",
+      "stderr": "",
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "id": "test::reads an existing report",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::reads nested reports",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::supports spaces in report names",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::preserves empty report contents",
+            "outcome": "passed"
+          },
+          {
+            "id": "test::preserves missing-file errors",
+            "outcome": "passed"
+          }
+        ]
+      }
+    }
+  ]
+}

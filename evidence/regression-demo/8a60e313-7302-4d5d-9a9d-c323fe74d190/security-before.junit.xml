@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="blocks parent directory traversal" time="0.003643" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs" failure="Missing expected exception.">
+		<failure type="testCodeFailure" message="Missing expected exception.">
+[Error [ERR_TEST_FAILURE]: Missing expected exception.] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs:22:56)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'EACCES' },
+    operator: 'throws',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="blocks sibling with the same directory prefix" time="0.002028" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs" failure="Missing expected exception.">
+		<failure type="testCodeFailure" message="Missing expected exception.">
+[Error [ERR_TEST_FAILURE]: Missing expected exception.] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs:23:68)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'EACCES' },
+    operator: 'throws',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="blocks traversal through a nested directory" time="0.002913" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs" failure="Missing expected exception.">
+		<failure type="testCodeFailure" message="Missing expected exception.">
+[Error [ERR_TEST_FAILURE]: Missing expected exception.] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.&lt;anonymous> (C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\8a60e313-7302-4d5d-9a9d-c323fe74d190\vulnerable\test\security.test.cjs:24:66)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'EACCES' },
+    operator: 'throws',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 3 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 163.8278 -->
+</testsuites>

@@ -1,0 +1,12 @@
+
+ RUN  v3.2.7 C:/Users/Aadarsh Tiwari/Downloads/r2Agnel/.data/regression-engine
+
+ ✓ tests/regression/regression.test.ts (1 test) 20524ms
+   ✓ executes a real red/green regression proof and serves only authenticated evidence  20521ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:53:25
+   Duration  21.64s (transform 180ms, setup 0ms, collect 674ms, tests 20.52s, environment 0ms, prepare 156ms)
+
+Exit code: 0
