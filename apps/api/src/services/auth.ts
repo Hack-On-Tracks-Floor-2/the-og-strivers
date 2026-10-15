@@ -59,6 +59,18 @@ export async function createSession(db: Database, userId: string) {
   ]);
   return token;
 }
+/** Local demo only: creates the demo developer account if it does not exist yet. */
+export async function provisionDemoDeveloper(
+  db: Database,
+  config?: { email: string; password: string; name: string },
+) {
+  if (!config) return;
+  if (config.password.length < 12 || config.password.length > 128)
+    throw new Error('DEVELOPER_DEMO_PASSWORD must have 12–128 characters.');
+  const email = config.email.trim().toLowerCase();
+  const existing = await db.query('SELECT 1 FROM users WHERE email=$1', [email]);
+  if (!existing.rows.length) await createUser(db, { ...config, email }, 'developer');
+}
 export async function provisionReviewer(
   db: Database,
   config?: { email: string; password: string; name: string },

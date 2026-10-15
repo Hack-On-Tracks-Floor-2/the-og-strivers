@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { openDatabase } from './database/index.js';
-import { provisionReviewer } from './services/auth.js';
+import { provisionReviewer, provisionDemoDeveloper } from './services/auth.js';
 import { createApp } from './app.js';
 import { createAiClient } from './ai/client.js';
 import { githubIngestion, WorkspaceStore } from './repositories/clone.js';
@@ -38,6 +38,12 @@ await provisionReviewer(
       }
     : undefined,
 );
+if (!production && process.env.DEVELOPER_DEMO_EMAIL && process.env.DEVELOPER_DEMO_PASSWORD)
+  await provisionDemoDeveloper(db, {
+    email: process.env.DEVELOPER_DEMO_EMAIL,
+    password: process.env.DEVELOPER_DEMO_PASSWORD,
+    name: 'Demo Developer',
+  });
 const dataRoot = resolve(root, process.env.WORK_PATH ?? '.data/work');
 const store = new WorkspaceStore(resolve(dataRoot, 'workspaces'));
 const sandbox = new DockerSandbox({

@@ -7,7 +7,9 @@ import { Brand, Eyebrow, ErrorBox, Loading } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 
-const reviewerDemo = import.meta.env.DEV ? __REVIEWER_DEMO__ : null;
+const demoAccounts = import.meta.env.DEV
+  ? { reviewer: __REVIEWER_DEMO__, developer: __DEVELOPER_DEMO__ }
+  : { reviewer: null, developer: null };
 
 export function AuthPage({
   role,
@@ -64,9 +66,10 @@ export function AuthPage({
     );
   }
   function fillDemoCredentials() {
-    if (!reviewerDemo || role !== 'reviewer') return;
-    setEmail(reviewerDemo.email);
-    setPassword(reviewerDemo.password);
+    const demo = demoAccounts[role];
+    if (!demo || register) return;
+    setEmail(demo.email);
+    setPassword(demo.password);
     setVisible(true);
     setError('');
     setDemoFilled(true);
@@ -152,7 +155,7 @@ export function AuthPage({
               ? 'Create your developer workspace.'
               : `Sign in to your ${role === 'reviewer' ? 'security reviewer' : 'developer'} workspace.`}
           </p>
-          {role === 'reviewer' && reviewerDemo && (
+          {!register && demoAccounts[role] && (
             <div className="demo-login">
               <button
                 type="button"
@@ -165,7 +168,7 @@ export function AuthPage({
               <p role="status" aria-live="polite">
                 {demoFilled
                   ? 'Demo credentials filled. Select Enter workspace to sign in.'
-                  : 'Use the local demo reviewer account.'}
+                  : `Use the local demo ${role === 'reviewer' ? 'reviewer' : 'developer'} account.`}
               </p>
             </div>
           )}
