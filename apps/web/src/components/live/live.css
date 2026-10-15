@@ -13,6 +13,11 @@
 .pmap { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 2px 8px; }
 .pmap-cell { display: flex; align-items: center; flex: 1 1 0; min-width: 0; }
 .pmap-cell:last-child { flex: 0.9 1 0; }
+/* Narrow screens: wrap the stages onto rows instead of squeezing the boxes over each other. */
+@media (max-width: 1280px) {
+  .pmap { flex-wrap: wrap; row-gap: 10px; overflow-x: visible; }
+  .pmap-cell, .pmap-cell:last-child { flex: 1 1 128px; }
+}
 .pmap-node { position: relative; flex: 1; min-width: 74px; min-height: 92px; padding: 10px 9px 8px; border: 1.5px solid rgba(255, 255, 255, .14); border-radius: 10px; background: rgba(255, 255, 255, .03); display: flex; flex-direction: column; gap: 3px; transition: all .35s; }
 .pmap-node strong { font-size: 13px; }
 .pmap-node small { font-size: 10.5px; color: #a1a1aa; line-height: 1.25; }
