@@ -79,7 +79,9 @@ export async function detectVulnerabilities(input: {
         'For model-only blocks, name the precise CWE yourself. Return one verdict per candidate id. Use the exact line numbers shown. Keep rootCause and recommendation under 60 words each.',
       data,
       schema: SCHEMA,
-      maxOutputTokens: 1_500,
+      // One verdict (~300 tokens) per snippet plus the model's reasoning; a fixed 1,500 truncated
+      // six-snippet answers once Semgrep added candidates. Stays within Groq's free per-minute budget.
+      maxOutputTokens: Math.min(4_000, 800 + 450 * search.candidates.length),
     },
     input.budget,
     input.signal,
