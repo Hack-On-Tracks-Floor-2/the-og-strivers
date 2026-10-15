@@ -15,7 +15,8 @@
     "build": "npm run build -w @proofpatch/shared && npm run build -w @proofpatch/api && npm run build -w @proofpatch/web",
     "test": "npm run build -w @proofpatch/shared && vitest run",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "start": "npm run start -w @proofpatch/api"
+    "start": "npm run start -w @proofpatch/api",
+    "demo:local": "tsx scripts/demo-local.mts"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
