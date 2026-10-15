@@ -293,6 +293,30 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     );
     send(res, result.rows);
   });
+  // Live view (Server-Sent Events): recorded history first, then events, the running sandbox
+  // container and its output line by line as they happen. Reviewer-only, like all run data.
+  router.get('/runs/:id/stream', requireRole('reviewer'), async (req, res) => {
+    const run = await accessibleRun(req);
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders();
+    const push = (message: unknown) => res.write(`data: ${JSON.stringify(message)}\n\n`);
+    const history = await db.query<{ document: unknown }>(
+      `SELECT document FROM events WHERE run_id=$1 ORDER BY document->>'createdAt' ASC`,
+      [run.id],
+    );
+    push({ type: 'history', events: history.rows.map((r) => r.document) });
+    const unsubscribe = pipeline ? pipeline.live.subscribe(run.id, push) : () => {};
+    if (pipeline) {
+      const snapshot = pipeline.live.snapshot(run.id);
+      if (snapshot.container) push({ type: 'container', container: snapshot.container });
+      if (snapshot.lines.length) push({ type: 'log', lines: snapshot.lines, replayed: true });
+    }
+    const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 15_000);
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
   for (const [path, table] of Object.entries({
     events: 'events',
     findings: 'findings',

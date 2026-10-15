@@ -23,6 +23,7 @@ import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
 import { detectToolchain, type Runtime, type Toolchain } from '../agents/toolchain.js';
 import { auditSummary, parseAudit } from '../verification/audit.js';
+import { LiveHub } from './live.js';
 import { parseSemgrep, scannersOf, semgrepArgv, semgrepRuleDirs, SEMGREP_RULES_COMMIT, SEMGREP_VERSION } from '../scanners/semgrep.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
@@ -42,7 +43,7 @@ import { recordFindingML } from '../services/finding-ml.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
-  prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime?: Runtime): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
+  prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime?: Runtime, onOutput?: (chunk: string) => void): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
   executeWith(request: ExecutionRequest, depsId: string, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>>;
   cleanup(workspaceId: string): Promise<void>;
 }
@@ -61,6 +62,8 @@ export interface PipelineOptions {
   testTimeoutMs?: number;
 }
 export interface Pipeline {
+  /** Live events, container info and output for the run being executed. */
+  live: LiveHub;
   status(): Promise<{ available: boolean; reason: string | null; ai: string[] }>;
   start(run: AnalysisRun): void;
   cancel(runId: string): boolean;
@@ -103,8 +106,29 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     Object.assign(run, patch, { updatedAt: new Date().toISOString() });
     await db.query('UPDATE runs SET document=$1 WHERE id=$2', [run, run.id]);
   }
-  const event = (run: AnalysisRun, kind: Parameters<typeof evidence.recordEvent>[0]['kind'], message: string, artifactId: string | null = null) =>
-    evidence.recordEvent({ runId: run.id, ownerId: run.ownerId, kind, message, artifactId });
+  const live = new LiveHub();
+  // Runs execute one at a time; container output is attributed to the run currently executing.
+  let activeRunId: string | null = null;
+  const event = async (run: AnalysisRun, kind: Parameters<typeof evidence.recordEvent>[0]['kind'], message: string, artifactId: string | null = null) => {
+    const recorded = await evidence.recordEvent({ runId: run.id, ownerId: run.ownerId, kind, message, artifactId });
+    live.event(run.id, recorded);
+    return recorded;
+  };
+  /** Wraps one container execution with live container info and streamed output. */
+  async function watched<T extends { exitCode: number; timedOut: boolean }>(
+    info: { image: string; argv: string[]; network: 'none' | 'bridge'; memoryMb: number; cpus: number },
+    exec: (onOutput: (chunk: string) => void) => Promise<T>,
+  ): Promise<T> {
+    const runId = activeRunId;
+    const startedAt = new Date().toISOString();
+    if (runId) live.container(runId, { ...info, startedAt });
+    const result = await exec((chunk) => runId && live.output(runId, chunk));
+    if (runId) {
+      live.flush(runId);
+      live.container(runId, { ...info, startedAt, finishedAt: new Date().toISOString(), exitCode: result.exitCode, timedOut: result.timedOut });
+    }
+    return result;
+  }
 
   async function artifact(run: AnalysisRun, kind: 'log' | 'junit' | 'diff' | 'security_test' | 'report', content: string) {
     const sha256 = createHash('sha256').update(content).digest('hex');
@@ -132,7 +156,10 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   const languageOf = new Map<string, Runtime>();
   async function prepareDeps(workspace: WorkspaceHandle, tc: Toolchain, signal: AbortSignal) {
     languageOf.set(workspace.id, tc.runtime);
-    return sandbox.prepare(workspace, signal, tc.runtime);
+    return watched(
+      { image: `proofpatch-runner (${tc.runtime})`, argv: ['install dependencies'], network: 'bridge', memoryMb: 1536, cpus: 2 },
+      (onOutput) => sandbox.prepare(workspace, signal, tc.runtime, onOutput),
+    );
   }
   async function toolchainFor(root: string) {
     const map = await inspectRepository(root);
@@ -151,13 +178,21 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await event(run, 'stage_completed', `Semgrep: no pinned rules for ${languages.join(', ') || 'this repository'}; skipped.`);
       return [];
     }
-    const result = await sandbox
-      .executeWith(
-        { workspace, argv: semgrepArgv(dirs), timeoutMs: 240_000, memoryMb: 1536, cpuLimit: 1, network: 'none', readOnlyRoot: true, maxOutputBytes: 200_000, language: 'semgrep' },
-        workspace.id,
-        signal,
-      )
-      .catch((error: unknown) => ({ state: 'failed' as const, message: error instanceof Error ? error.message : 'Semgrep failed.' }));
+    const argv = semgrepArgv(dirs);
+    type Outcome = Awaited<ReturnType<PipelineSandbox['executeWith']>> | { state: 'failed'; message: string };
+    const box: { result: Outcome } = { result: { state: 'failed', message: 'not run' } };
+    await watched({ image: `proofpatch-semgrep ${SEMGREP_VERSION}`, argv, network: 'none', memoryMb: 1536, cpus: 1 }, async (onOutput) => {
+      const r: Outcome = await sandbox
+        .executeWith(
+          { workspace, argv, timeoutMs: 240_000, memoryMb: 1536, cpuLimit: 1, network: 'none', readOnlyRoot: true, maxOutputBytes: 200_000, language: 'semgrep', onOutput },
+          workspace.id,
+          signal,
+        )
+        .catch((error: unknown) => ({ state: 'failed' as const, message: error instanceof Error ? error.message : 'Semgrep failed.' }));
+      box.result = r;
+      return r.state === 'completed' ? r.data : { exitCode: -1, timedOut: false };
+    });
+    const result = box.result;
     if (result.state !== 'completed') {
       await event(run, 'stage_failed', `Semgrep could not run: ${'message' in result ? result.message : 'unknown error'}. Continuing with the other scanners.`);
       return [];
@@ -183,23 +218,25 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   }
 
   async function execute(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
-    const result = await sandbox.executeWith(
-      {
-        workspace,
-        argv,
-        language: languageOf.get(depsId) ?? 'python',
-        timeoutMs: testTimeoutMs,
-        memoryMb: 1024,
-        cpuLimit: 1,
-        network: 'none',
-        readOnlyRoot: true,
-        maxOutputBytes: 200_000,
+    const runtime = languageOf.get(depsId) ?? 'python';
+    let failure: string | null = null;
+    const data = await watched(
+      { image: `proofpatch-runner (${runtime})`, argv, network: 'none', memoryMb: 1024, cpus: 1 },
+      async (onOutput) => {
+        const result = await sandbox.executeWith(
+          { workspace, argv, language: runtime, timeoutMs: testTimeoutMs, memoryMb: 1024, cpuLimit: 1, network: 'none', readOnlyRoot: true, maxOutputBytes: 200_000, onOutput },
+          depsId,
+          signal,
+        );
+        if (result.state !== 'completed') {
+          failure = result.message;
+          return { exitCode: -1, timedOut: false, stdout: '', stderr: '', durationMs: 0, artifactId: '', files: {} };
+        }
+        return result.data;
       },
-      depsId,
-      signal,
     );
-    if (result.state !== 'completed') throw new StageFailure(result.message);
-    return result.data;
+    if (failure) throw new StageFailure(failure);
+    return data;
   }
 
   /** A security retest counts only if it completed, exited 0, and at least one test actually passed. */
@@ -588,6 +625,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   async function mergeOne(patchId: string, signal: AbortSignal) {
     const ctx = await loadMergeContext(patchId);
     const { patch, run, repository } = ctx;
+    activeRunId = run.id;
     const workspaces: string[] = [];
     const checks: MergeCheck[] = [];
     try {
@@ -742,6 +780,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   async function runOne(run: AnalysisRun) {
     const controller = new AbortController();
     controllers.set(run.id, controller);
+    activeRunId = run.id;
     try {
       await process(run, controller.signal);
     } catch (error) {
@@ -759,6 +798,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   }
 
   return {
+    live,
     async status() {
       const reason = !options.ai ? 'No AI provider configured (GEMINI_API_KEY / GROQ_API_KEY).' : await sandbox.ready();
       return { available: !reason, reason, ai: options.ai?.providers ?? [] };

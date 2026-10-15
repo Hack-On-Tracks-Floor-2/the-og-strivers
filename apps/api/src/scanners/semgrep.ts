@@ -26,7 +26,7 @@ export function semgrepArgv(ruleDirs: string[]) {
     'semgrep', 'scan',
     ...ruleDirs.flatMap((d) => ['--config', `/rules/${d}`]),
     '--json', '--output', '/out/semgrep.json',
-    '--metrics=off', '--disable-version-check', '--quiet',
+    '--metrics=off', '--disable-version-check',
     '--timeout', '20', '--timeout-threshold', '3', '--max-target-bytes', '500000', '--jobs', '1',
     ...['tests', 'test', 'spec', '__tests__', 'node_modules', 'vendor', 'dist', 'build', 'target'].flatMap((d) => ['--exclude', d]),
     '.',

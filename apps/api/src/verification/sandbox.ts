@@ -10,6 +10,8 @@ export interface ExecutionRequest {
   maxOutputBytes: number;
   /** Selects the runner image (defaults to Python). */
   language?: import('../agents/toolchain.js').Runtime | 'semgrep';
+  /** Receives the container's stdout/stderr as it is produced (live view). */
+  onOutput?: (chunk: string) => void;
 }
 export interface ExecutionResult {
   exitCode: number;
