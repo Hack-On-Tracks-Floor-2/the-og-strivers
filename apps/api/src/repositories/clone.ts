@@ -84,17 +84,29 @@ export function githubIngestion(
       const dir = store.path(id);
       await mkdir(store.root, { recursive: true });
       try {
-        await git(
-          [
-            '-c', 'core.symlinks=false',
-            '-c', 'core.hooksPath=/dev/null',
-            '-c', 'protocol.file.allow=never',
-            'clone', '--depth', '1', '--single-branch', '--no-tags', '--no-recurse-submodules',
-            `https://github.com/${repository.owner}/${repository.name}.git`,
-            dir,
-          ],
-          { timeoutMs: ingestionLimits.cloneTimeoutMs, signal },
-        );
+        // Retry transient network failures (connection reset, early EOF) on flaky Wi-Fi.
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await git(
+              [
+                '-c', 'core.symlinks=false',
+                '-c', 'core.hooksPath=/dev/null',
+                '-c', 'protocol.file.allow=never',
+                '-c', 'http.postBuffer=524288000',
+                'clone', '--depth', '1', '--single-branch', '--no-tags', '--no-recurse-submodules',
+                `https://github.com/${repository.owner}/${repository.name}.git`,
+                dir,
+              ],
+              { timeoutMs: ingestionLimits.cloneTimeoutMs, signal },
+            );
+            break;
+          } catch (error) {
+            const transient = error instanceof Error && /RPC failed|early EOF|Connection was reset|unexpected disconnect|Could not resolve host|timed out|SSL/i.test(error.message);
+            await rm(dir, { recursive: true, force: true });
+            if (!transient || attempt >= 3 || signal.aborted) throw error;
+            await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
+          }
+        }
         const commitSha = await git(['rev-parse', 'HEAD'], { cwd: dir, timeoutMs: 10_000, signal });
         // 3. Enforce file/size limits and reject anything that is not a plain file or folder.
         const problem = await auditTree(dir);
