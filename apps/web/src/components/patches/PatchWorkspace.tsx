@@ -6,6 +6,7 @@ import {
   diffStatistics,
   formatDuration,
   durationMs,
+  owaspLabel,
   patchEvidence,
   recordedMetadata,
   repositoryLabel,
@@ -42,6 +43,7 @@ export function PatchWorkspace({
         <div>
           <Eyebrow>
             PATCH / {patch.id.slice(0, 8)} · ATTEMPT {patch.attempt}
+            {owaspLabel(finding?.cwe) ? ` · ${owaspLabel(finding?.cwe)}` : ''}
           </Eyebrow>
           <h2>
             {finding

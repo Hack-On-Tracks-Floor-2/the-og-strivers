@@ -22,6 +22,7 @@ import type { WorkspaceStore } from '../repositories/clone.js';
 import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
 import { detectToolchain, type Language, type Toolchain } from '../agents/toolchain.js';
+import { auditSummary, parseAudit } from '../verification/audit.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
 import { EditError, unifiedDiff } from '../patching/edits.js';
@@ -39,7 +40,7 @@ import type { Locator } from '../scanners/locator.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
-  prepare(workspace: WorkspaceHandle, signal: AbortSignal, language?: Language): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
+  prepare(workspace: WorkspaceHandle, signal: AbortSignal, language?: Language): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
   executeWith(request: ExecutionRequest, depsId: string, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>>;
   cleanup(workspaceId: string): Promise<void>;
 }
@@ -280,6 +281,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       if (prepared.exitCode !== 0)
         throw new StageFailure(`Dependency installation failed (exit ${prepared.exitCode}${prepared.timedOut ? ', timed out' : ''}): ${tail(prepared.stderr, 600)}`);
       await event(run, 'stage_completed', 'Dependencies installed. All further execution runs with network disabled.');
+      const advisories = parseAudit(tc.language, prepared.audit);
+      if (advisories) {
+        const summary = auditSummary(advisories);
+        await event(run, 'stage_completed', summary, await artifact(run, 'report', `${summary}\n\n${JSON.stringify(advisories, null, 2)}`));
+      }
 
       // 4. Baseline: the original test suite, before any change.
       await setRun(run, { status: 'analyzing' });

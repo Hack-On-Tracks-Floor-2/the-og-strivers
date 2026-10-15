@@ -124,6 +124,8 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       'if [ -f package-lock.json ]; then npm ci --ignore-scripts --no-audit --no-fund --loglevel=error;',
       'else npm install --ignore-scripts --no-audit --no-fund --loglevel=error; fi',
       'if grep -q \'"jest"\' package.json; then npm install --no-save --ignore-scripts --no-audit --no-fund --loglevel=error jest-junit; fi',
+      // OWASP A06: known-vulnerable runtime dependencies (best effort; never fails the stage).
+      'timeout 90 npm audit --json --omit=dev > /deps/audit.json 2>/dev/null || true',
       'echo prepared',
     ].join('\n');
     const pythonScript = [
@@ -134,6 +136,8 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       'if [ -f pyproject.toml ] || [ -f setup.py ]; then',
       '  pip install --no-cache-dir --quiet --target /deps ".[test]" 2>/dev/null || pip install --no-cache-dir --quiet --target /deps . || true',
       'fi',
+      // OWASP A06: known-vulnerable installed packages (best effort; never fails the stage).
+      'if command -v pip-audit >/dev/null; then PYTHONPATH= timeout 120 pip-audit --path /deps -f json -o /deps/audit.json --progress-spinner off >/dev/null 2>&1 || true; fi',
       'echo prepared',
     ].join('\n');
     const result = await this.run(
@@ -148,7 +152,8 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       200_000,
       signal,
     );
-    return { ...result, depsId: workspace.id };
+    const audit = await readFile(join(deps, 'audit.json'), 'utf8').catch(() => undefined);
+    return { ...result, depsId: workspace.id, audit };
   }
 
   async execute(request: ExecutionRequest, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>> {

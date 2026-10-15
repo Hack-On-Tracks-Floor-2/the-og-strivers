@@ -11,7 +11,10 @@ import { provisionReviewer } from '../../apps/api/src/services/auth.js';
 import { WorkspaceStore } from '../../apps/api/src/repositories/clone.js';
 import { createPipeline, type PipelineSandbox } from '../../apps/api/src/pipeline/orchestrator.js';
 import { createAiClient, TokenBudget, type AiClient } from '../../apps/api/src/ai/client.js';
-import { findCandidates } from '../../apps/api/src/scanners/funnel.js';
+import { findCandidates, PYTHON_SINKS } from '../../apps/api/src/scanners/funnel.js';
+import { JS_SINKS } from '../../apps/api/src/scanners/javascript.js';
+import { auditSummary, parseAudit } from '../../apps/api/src/verification/audit.js';
+import { OWASP_TOP_10, owaspFor } from '@proofpatch/shared';
 import { applyEdits, unifiedDiff, changedLineCount, EditError } from '../../apps/api/src/patching/edits.js';
 import { parseJUnit, compareSuites } from '../../apps/api/src/verification/junit.js';
 import { DockerSandbox, hardeningArgs } from '../../apps/api/src/verification/docker.js';
@@ -105,6 +108,26 @@ describe('JavaScript support', () => {
     expect(candidates[0].snippet).toContain('function greet(name)');
     expect(candidates[0].snippet).toContain('execSync(`echo Hello ${name}`)');
     expect(candidates[0].snippet).not.toContain('function shout');
+  });
+});
+
+describe('OWASP Top 10 coverage', () => {
+  it.each([
+    ['Python', PYTHON_SINKS],
+    ['JavaScript', JS_SINKS],
+  ])('%s rules map to every code-detectable OWASP category', (_lang, rules) => {
+    for (const rule of rules) expect(owaspFor(rule.cwe), `${rule.id} ${rule.cwe}`).not.toBeNull();
+    const covered = new Set(rules.map((r) => owaspFor(r.cwe)!.id));
+    // A06 (vulnerable components) is covered by the dependency audit, not by code rules.
+    for (const c of OWASP_TOP_10.filter((c) => c.id !== 'A06')) expect(covered.has(c.id), c.id).toBe(true);
+  });
+  it('reads npm audit and pip-audit reports as A06 advisories', () => {
+    const npm = parseAudit('javascript', JSON.stringify({ vulnerabilities: { lodash: { severity: 'high', range: '<4.17.21', via: [{ url: 'https://github.com/advisories/GHSA-35jh-r3h4-6jhm' }], fixAvailable: { version: '4.17.21' } } } }));
+    expect(npm).toEqual([{ name: 'lodash', version: '<4.17.21', severity: 'high', ids: ['GHSA-35jh-r3h4-6jhm'], fix: 'upgrade to 4.17.21' }]);
+    const pip = parseAudit('python', JSON.stringify({ dependencies: [{ name: 'requests', version: '2.19.0', vulns: [{ id: 'PYSEC-2018-28', fix_versions: ['2.20.0'], aliases: ['CVE-2018-18074'] }] }, { name: 'six', version: '1.16.0', vulns: [] }] }));
+    expect(pip).toEqual([{ name: 'requests', version: '2.19.0', severity: 'known CVE', ids: ['PYSEC-2018-28', 'CVE-2018-18074'], fix: 'upgrade to 2.20.0' }]);
+    expect(auditSummary(pip!)).toMatch(/OWASP A06\): 1 vulnerable package — requests 2.19.0/);
+    expect(parseAudit('python', 'not json')).toBeNull();
   });
 });
 
