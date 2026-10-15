@@ -45,6 +45,7 @@ export function hardeningArgs(memoryMb: number, cpus: number) {
     '--ulimit', 'nofile=1024:1024',
     '-e', 'HOME=/tmp',
     '-e', 'PYTHONDONTWRITEBYTECODE=1',
+    '-e', 'PYTHONUNBUFFERED=1', // stream test output live instead of at exit
     '-e', 'PYTHONPATH=/tmp/work:/tmp/work/src:/deps',
     '-e', 'PIP_DISABLE_PIP_VERSION_CHECK=1',
   ];
@@ -58,7 +59,7 @@ const bind = (source: string, target: string, readonly: boolean) => [
 export class DockerSandbox implements SandboxExecutionAdapter {
   constructor(private options: DockerOptions) {}
 
-  private run(args: string[], timeoutMs: number, maxOutputBytes: number, signal: AbortSignal) {
+  private run(args: string[], timeoutMs: number, maxOutputBytes: number, signal: AbortSignal, onOutput?: (chunk: string) => void) {
     const docker = this.options.docker ?? 'docker';
     const spawnImpl = this.options.spawnImpl ?? spawn;
     return new Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; durationMs: number }>(
@@ -70,8 +71,14 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         let stderr = '';
         let timedOut = false;
         const cap = (buf: string, d: Buffer) => (buf.length < maxOutputBytes ? (buf + d).slice(0, maxOutputBytes) : buf);
-        child.stdout?.on('data', (d: Buffer) => (stdout = cap(stdout, d)));
-        child.stderr?.on('data', (d: Buffer) => (stderr = cap(stderr, d)));
+        child.stdout?.on('data', (d: Buffer) => {
+          stdout = cap(stdout, d);
+          onOutput?.(d.toString());
+        });
+        child.stderr?.on('data', (d: Buffer) => {
+          stderr = cap(stderr, d);
+          onOutput?.(d.toString());
+        });
         const kill = () => spawnImpl(docker, ['kill', name], { windowsHide: true }).on('error', () => {});
         const timer = setTimeout(() => {
           timedOut = true;
@@ -132,7 +139,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
    * dependency folder. This is the ONLY stage with network access; it still runs as a
    * non-root user with no capabilities and resource limits. Tests later mount it read-only.
    */
-  async prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime: Runtime = 'python') {
+  async prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime: Runtime = 'python', onOutput?: (chunk: string) => void) {
     const deps = this.depsPath(workspace.id);
     await mkdir(deps, { recursive: true });
     await chmod(deps, 0o777); // container runs as uid 10001
@@ -231,6 +238,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       300_000,
       200_000,
       signal,
+      onOutput,
     );
     const audit = await readFile(join(deps, 'audit.json'), 'utf8').catch(() => undefined);
     return { ...result, depsId: workspace.id, audit };
@@ -261,6 +269,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         request.timeoutMs,
         request.maxOutputBytes,
         signal,
+        request.onOutput,
       );
       const files: Record<string, string> = {};
       for (const name of ['junit.xml', 'bandit.json', 'semgrep.json'])

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { Play, Circle, Check, ArrowUpRight, Info, X } from 'lucide-react';
+import { Play, Info } from 'lucide-react';
 import {
   RepositorySchema,
   AnalysisRunSchema,
@@ -13,37 +13,8 @@ import {
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { PageTitle, EmptyState, ErrorBox, Loading, Status, Eyebrow, date } from '../components/ui';
+import { LiveRun } from '../components/live/LiveRun';
 const ACTIVE = ['received', 'queued', 'mapping', 'analyzing', 'patching', 'verifying'];
-const STEPS: [string, AnalysisRun['status'][]][] = [
-  ['Request received', ['received', 'queued']],
-  ['Clone & source mapping', ['mapping']],
-  ['Baseline tests & vulnerability search', ['analyzing']],
-  ['Patch generation', ['patching']],
-  ['Exploit test & regression proof', ['verifying']],
-  ['Security review', ['needs_review', 'verified']],
-];
-// For failed runs, find how far the pipeline got from its recorded events.
-const REACHED: RegExp[] = [/registered/, /^Cloned at|^Mapped/, /^Baseline:|^Search funnel/, /^Generating patch/, /^Reproduced|^Security retest|^Regression/, /^Proof complete/];
-function reachedStep(events: RunEvent[] | undefined) {
-  let reached = 0;
-  for (const e of events ?? [])
-    REACHED.forEach((re, i) => {
-      if (re.test(e.message)) reached = Math.max(reached, i);
-    });
-  return reached;
-}
-function stepState(run: AnalysisRun | undefined, index: number, events?: RunEvent[]) {
-  if (!run || run.status === 'not_configured') return index === 0 ? 'done' : 'idle';
-  if (run.status === 'failed') {
-    const reached = reachedStep(events);
-    // The step after the last completed milestone is where it stopped.
-    const stoppedAt = Math.min(reached + 1, STEPS.length - 1);
-    return index < stoppedAt ? 'done' : index === stoppedAt ? 'failed' : 'idle';
-  }
-  const current = STEPS.findIndex(([, statuses]) => statuses.includes(run.status));
-  if (index < current || (index === current && index === STEPS.length - 1)) return 'done';
-  return index === current ? 'active' : 'idle';
-}
 export function ScannerPage() {
   const [params, setParams] = useSearchParams();
   const health = useResource(() => api('/health', HealthSchema));
@@ -178,6 +149,8 @@ export function ScannerPage() {
           />
         </section>
       ) : (
+        <>
+        {run && <LiveRun key={run.id} run={run} />}
         <div className="scanner-grid">
           <section className="panel">
             <div className="panel-heading">
@@ -206,32 +179,6 @@ export function ScannerPage() {
               <h2>Pipeline & events</h2>
               {run && <Status value={run.status} />}
             </div>
-            <div className="pipeline">
-              {STEPS.map(([step], i) => {
-                const s = stepState(run, i, eventList);
-                return (
-                  <div key={step} className={s === 'done' ? 'pipeline-step recorded' : 'pipeline-step'}>
-                    {s === 'done' ? (
-                      <Check size={16} />
-                    ) : s === 'failed' ? (
-                      <X size={16} style={{ color: 'var(--danger, #ff5a4e)' }} />
-                    ) : (
-                      <Circle size={13} />
-                    )}
-                    <span>{step}</span>
-                    <small>
-                      {s === 'done'
-                        ? 'COMPLETED'
-                        : s === 'active'
-                          ? 'RUNNING…'
-                          : s === 'failed'
-                            ? 'STOPPED HERE'
-                            : 'NOT EXECUTED'}
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
             {run?.error && <ErrorBox message={run.error} />}
             <Eyebrow>RECORDED EVENTS</Eyebrow>
             {events.loading && !eventList ? (
@@ -249,6 +196,7 @@ export function ScannerPage() {
             )}
           </section>
         </div>
+        </>
       )}
     </>
   );
