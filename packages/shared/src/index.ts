@@ -77,13 +77,16 @@ export const RunStatusSchema = z.enum([
   'not_configured',
 ]);
 /** What a developer sees about their submitted repository: a single status, never findings or patches. */
-export const SubmissionStatusSchema = z.enum(['submitted', 'scanning', 'in_review', 'approved', 'rejected', 'scan_failed']);
+export const SubmissionStatusSchema = z.enum(['submitted', 'scanning', 'in_review', 'approved', 'merging', 'fix_branch_ready', 'rejected', 'scan_failed']);
 export const SubmissionSchema = z.object({
   repositoryId: Id,
   url: z.string(),
   owner: z.string(),
   name: z.string(),
   status: SubmissionStatusSchema,
+  /** The fix branch and pull request, once a reviewer has merged an approved fix. */
+  branch: z.string().nullable().default(null),
+  pullRequestUrl: z.string().nullable().default(null),
   submittedAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -119,6 +122,33 @@ export const FindingSchema = z.object({
   createdAt: Timestamp,
 });
 export const SecurityTestSchema = z.object({ path: z.string(), content: z.string() });
+/**
+ * Merging an approved fix onto the repository's latest code. A clean merge whose proofs pass is
+ * published as a GitHub branch + pull request. An AI-resolved conflict stops at awaiting_review
+ * until a reviewer confirms. If the proofs fail on the latest code, the fix goes back to patching.
+ */
+export const MergeCheckSchema = z.object({
+  stage: z.enum(['apply', 'baseline', 'reproduction', 'security_retest', 'regression', 'publish']),
+  passed: z.boolean(),
+  summary: z.string(),
+});
+export const MergeSchema = z.object({
+  status: z.enum(['merging', 'awaiting_review', 'merged', 'sent_back', 'already_fixed', 'failed']),
+  baseBranch: z.string().nullable(),
+  baseSha: z.string().nullable(),
+  branch: z.string().nullable(),
+  pullRequestUrl: z.string().nullable(),
+  resolvedByAi: z.array(z.string()).default([]),
+  mergedDiff: z.string().default(''),
+  /** Full merged files, kept only while an AI-resolved merge awaits reviewer confirmation. */
+  files: z.array(z.object({ path: z.string(), content: z.string() })).default([]),
+  checks: z.array(MergeCheckSchema).default([]),
+  message: z.string(),
+  sentBackRunId: Id.nullable().default(null),
+  updatedAt: Timestamp,
+});
+export type Merge = z.infer<typeof MergeSchema>;
+export type MergeCheck = z.infer<typeof MergeCheckSchema>;
 export const PatchSchema = z.object({
   id: Id,
   runId: Id,
@@ -131,6 +161,7 @@ export const PatchSchema = z.object({
   securityTest: SecurityTestSchema.nullable().default(null),
   attempt: z.number().int().min(1).default(1),
   explanation: z.string().default(''),
+  merge: MergeSchema.nullable().default(null),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });

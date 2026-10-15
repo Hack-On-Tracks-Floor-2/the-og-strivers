@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -231,6 +231,27 @@ function fakeSandbox(store: WorkspaceStore, options: { breakSuite?: boolean } = 
   };
 }
 
+/** Fake GitHub: "latest" is the fixture, optionally edited upstream; publishing records the branch. */
+function fakeGithub(upstream?: (storePy: string) => string) {
+  const published: { branch: string; storePy: string }[] = [];
+  return {
+    published,
+    canPublish: true,
+    async cloneLatest(_repo: unknown, dir: string) {
+      await cp(FIXTURE, dir, { recursive: true });
+      if (upstream) {
+        const file = join(dir, 'vulnapp', 'store.py');
+        await writeFile(file, upstream(await readFile(file, 'utf8')));
+      }
+      return { baseBranch: 'main', baseSha: 'abc1234def' };
+    },
+    async publish(input: { dir: string; branch: string }) {
+      published.push({ branch: input.branch, storePy: await readFile(join(input.dir, 'vulnapp', 'store.py'), 'utf8') });
+      return { pullRequestUrl: `https://github.com/example/vulnapp/pull/${published.length}` };
+    },
+  };
+}
+
 function fakeAi(patchAttempts: string[][]): AiClient & { tasks: string[] } {
   const tasks: string[] = [];
   let patchCall = 0;
@@ -241,6 +262,15 @@ function fakeAi(patchAttempts: string[][]): AiClient & { tasks: string[] } {
       tasks.push(req.task);
       budget.charge(500);
       const usage = { provider: 'Fake', model: 'test', inputTokens: 400, outputTokens: 100, cached: false, redacted: 0 };
+      if (req.task === 'merge') {
+        // Keep the upstream rename and apply the parameterized query.
+        const conflicted = (req as unknown as { data: string }).data.split('with conflicts\n')[1];
+        const content = conflicted.replace(
+          /<<<<<<< latest\n[\s\S]*?=======\n[\s\S]*?>>>>>>> fix\n/,
+          '    found = db.execute("SELECT id, name, email FROM users WHERE name = ?", (name,)).fetchall()\n',
+        );
+        return { value: { content, explanation: 'Kept the rename, bound the parameter.' } as T, usage };
+      }
       if (req.task === 'detect')
         return { value: { verdicts: [{ candidateId: 'C1', vulnerable: true, confidence: 0.95, cwe: 'CWE-89', severity: 'high', rootCause: 'User input is formatted into SQL.', evidence: ['name flows into execute'], recommendation: 'Use a parameterized query.' }] } as T, usage };
       const [search, replace] = patchAttempts[Math.min(patchCall++, patchAttempts.length - 1)];
@@ -262,7 +292,7 @@ describe.sequential('end-to-end pipeline', () => {
     await rm(folder, { recursive: true, force: true });
   });
 
-  async function setup(ai: AiClient, sandboxOptions: { breakSuite?: boolean } = {}) {
+  async function setup(ai: AiClient, sandboxOptions: { breakSuite?: boolean } = {}, github = fakeGithub()) {
     await db?.close();
     db = await openDatabase(join(folder, randomUUID(), 'db'));
     await provisionReviewer(db, { email: 'reviewer@example.com', password, name: 'Reviewer' });
@@ -273,6 +303,7 @@ describe.sequential('end-to-end pipeline', () => {
       store,
       sandbox,
       ai,
+      github,
       ingestion: {
         async ingest(repository) {
           const id = randomUUID();
@@ -293,7 +324,7 @@ describe.sequential('end-to-end pipeline', () => {
     const [run] = (await dev.get('/api/runs')).body.data;
     expect(run.repositoryId).toBe(repo.body.data.id);
     expect((await developer.get(`/api/runs/${run.id}/patches`)).status).toBe(403);
-    return { app, dev, developer, runId: run.id as string, sandbox };
+    return { app, dev, developer, runId: run.id as string, sandbox, pipeline, github };
   }
 
   it('finds the bug, reproduces it, patches it, proves it, and lets a reviewer approve', async () => {
@@ -343,5 +374,61 @@ describe.sequential('end-to-end pipeline', () => {
     expect((await dev.get(`/api/runs/${runId}`)).body.data.status).toBe('needs_review');
     const [patch] = (await dev.get(`/api/runs/${runId}/patches`)).body.data;
     expect(patch.attempt).toBe(2);
+  });
+
+  async function approveAndMerge(ai: AiClient, sandboxOptions: { breakSuite?: boolean }, github: ReturnType<typeof fakeGithub>, breakAfterApproval = false) {
+    const ctx = await setup(ai, sandboxOptions, github);
+    const [patch] = (await ctx.dev.get(`/api/runs/${ctx.runId}/patches`)).body.data;
+    expect((await ctx.dev.post(`/api/reviews/${patch.id}/decision`).set('Origin', origin).send({ decision: 'approved', reason: 'Proofs reviewed.' })).status).toBe(201);
+    if (breakAfterApproval) sandboxOptions.breakSuite = true;
+    expect((await ctx.dev.post(`/api/reviews/${patch.id}/merge`).set('Origin', origin).send({})).status).toBe(202);
+    await ctx.pipeline.idle();
+    const merged = (await ctx.dev.get(`/api/runs/${ctx.runId}/patches`)).body.data.find((p: { id: string }) => p.id === patch.id);
+    return { ...ctx, patch: merged };
+  }
+
+  it('merges a clean fix onto the latest code, re-proves it and opens a pull request for the developer', async () => {
+    const github = fakeGithub();
+    const { patch, developer } = await approveAndMerge(fakeAi([[VULN_LINE, SAFE_LINE]]), {}, github);
+    expect(patch.merge.status).toBe('merged');
+    expect(patch.merge.checks.map((c: { stage: string; passed: boolean }) => `${c.stage}:${c.passed}`)).toEqual([
+      'apply:true', 'baseline:true', 'reproduction:true', 'security_retest:true', 'regression:true', 'publish:true',
+    ]);
+    expect(github.published[0].branch).toBe(`proofpatch/fix-${patch.id.slice(0, 8)}`);
+    expect(github.published[0].storePy).toContain(SAFE_LINE);
+    const [submission] = (await developer.get('/api/submissions')).body.data;
+    expect(submission).toMatchObject({ status: 'fix_branch_ready', branch: github.published[0].branch, pullRequestUrl: 'https://github.com/example/vulnapp/pull/1' });
+  });
+
+  it('three-way merges around an unrelated upstream change', async () => {
+    const github = fakeGithub((py) => py.replace('def checksum(data):', 'def checksum(data):\n    # upstream: sha256 of raw bytes'));
+    const { patch } = await approveAndMerge(fakeAi([[VULN_LINE, SAFE_LINE]]), {}, github);
+    expect(patch.merge.status).toBe('merged');
+    expect(github.published[0].storePy).toContain('# upstream: sha256 of raw bytes');
+    expect(github.published[0].storePy).toContain(SAFE_LINE);
+  });
+
+  it('lets the AI resolve a real conflict but publishes only after a reviewer confirms', async () => {
+    const ai = fakeAi([[VULN_LINE, SAFE_LINE]]);
+    const github = fakeGithub((py) => py.replace(VULN_LINE, VULN_LINE.replace('rows =', 'found =')).replace('    return rows', '    return found'));
+    const { patch, dev, pipeline } = await approveAndMerge(ai, {}, github);
+    expect(ai.tasks).toContain('merge');
+    expect(patch.merge.status).toBe('awaiting_review');
+    expect(patch.merge.resolvedByAi).toEqual(['vulnapp/store.py']);
+    expect(github.published).toHaveLength(0);
+    expect((await dev.post(`/api/reviews/${patch.id}/merge/confirm`).set('Origin', origin).send({})).status).toBe(202);
+    await pipeline.idle();
+    expect(github.published).toHaveLength(1);
+    expect(github.published[0].storePy).toContain('found = db.execute("SELECT id, name, email FROM users WHERE name = ?", (name,))');
+  });
+
+  it('sends the fix back for patching when it breaks tests on the latest code', async () => {
+    const github = fakeGithub();
+    const { patch, dev } = await approveAndMerge(fakeAi([[VULN_LINE, SAFE_LINE]]), {}, github, true);
+    expect(patch.merge.status).toBe('sent_back');
+    expect(patch.merge.checks.find((c: { stage: string }) => c.stage === 'regression').passed).toBe(false);
+    expect(github.published).toHaveLength(0);
+    const runs = (await dev.get('/api/runs')).body.data.map((r: { id: string }) => r.id);
+    expect(runs).toContain(patch.merge.sentBackRunId);
   });
 });

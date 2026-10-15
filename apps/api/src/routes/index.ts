@@ -154,21 +154,26 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       "SELECT document FROM runs WHERE owner_id=$1 ORDER BY document->>'createdAt' DESC",
       [user.id],
     );
-    const decisions = await db.query<{ run_id: string; status: string }>(
-      "SELECT run_id, document->>'status' AS status FROM patches WHERE owner_id=$1",
+    const decisions = await db.query<{ run_id: string; document: Patch }>(
+      'SELECT run_id, document FROM patches WHERE owner_id=$1',
       [user.id],
     );
     send(
       res,
       repos.map((repo) => {
         const run = runs.rows.map((r) => r.document).find((r) => r.repositoryId === repo.id);
-        const patchStates = decisions.rows.filter((d) => d.run_id === run?.id).map((d) => d.status);
+        const runPatches = decisions.rows.filter((d) => d.run_id === run?.id).map((d) => d.document);
+        const patchStates = runPatches.map((p) => p.status);
+        const merged = runPatches.find((p) => p.merge?.status === 'merged');
+        const merging = runPatches.some((p) => p.merge && ['merging', 'awaiting_review'].includes(p.merge.status));
         return SubmissionSchema.parse({
           repositoryId: repo.id,
           url: repo.url,
           owner: repo.owner,
           name: repo.name,
-          status: submissionStatus(run, patchStates),
+          status: merged ? 'fix_branch_ready' : merging ? 'merging' : submissionStatus(run, patchStates),
+          branch: merged?.merge?.branch ?? null,
+          pullRequestUrl: merged?.merge?.pullRequestUrl ?? null,
           submittedAt: repo.createdAt,
           updatedAt: run?.updatedAt ?? repo.updatedAt,
         });
@@ -312,6 +317,27 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       res,
       result.rows.map((r) => r.document),
     );
+  });
+  // Merge an approved fix onto the latest code; publishes a GitHub branch + PR when every proof passes again.
+  router.post('/reviews/:id/merge', requireRole('reviewer'), async (req, res) => {
+    const patch = (await db.query<{ document: Patch }>('SELECT document FROM patches WHERE id=$1', [id(req)])).rows[0]?.document;
+    if (!patch) throw new HttpError(404, 'NOT_FOUND', 'Patch not found.');
+    if (patch.status !== 'approved') throw new HttpError(409, 'NOT_APPROVED', 'Only an approved patch can be merged.');
+    if (patch.merge && !['failed'].includes(patch.merge.status))
+      throw new HttpError(409, 'MERGE_EXISTS', `This patch's merge is already ${patch.merge.status.replace('_', ' ')}.`);
+    if (!pipeline) throw new HttpError(503, 'UNAVAILABLE', 'The agent pipeline is not available.');
+    pipeline.merge(patch.id);
+    send(res, { queued: true }, 202);
+  });
+  // Human check for AI-resolved merge conflicts: nothing is pushed until a reviewer confirms.
+  router.post('/reviews/:id/merge/confirm', requireRole('reviewer'), async (req, res) => {
+    const patch = (await db.query<{ document: Patch }>('SELECT document FROM patches WHERE id=$1', [id(req)])).rows[0]?.document;
+    if (!patch) throw new HttpError(404, 'NOT_FOUND', 'Patch not found.');
+    if (patch.merge?.status !== 'awaiting_review')
+      throw new HttpError(409, 'NOT_AWAITING', 'This merge is not awaiting confirmation.');
+    if (!pipeline) throw new HttpError(503, 'UNAVAILABLE', 'The agent pipeline is not available.');
+    pipeline.confirmMerge(patch.id);
+    send(res, { queued: true }, 202);
   });
   router.post('/reviews/:id/decision', requireRole('reviewer'), async (req, res) => {
     const input = DecisionInputSchema.parse(req.body);

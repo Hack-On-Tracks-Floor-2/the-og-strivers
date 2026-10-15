@@ -16,6 +16,7 @@ import {
 } from '../../lib/security-data';
 import { Eyebrow, Status, date } from '../ui';
 import { DiffViewer } from '../code/DiffViewer';
+import { MergePanel } from './MergePanel';
 
 export function PatchWorkspace({
   patch,
@@ -150,6 +151,7 @@ export function PatchWorkspace({
             : 'A generated patch or reviewer approval alone does not establish that security and regression checks passed.'}
         </p>
       </section>
+      {user?.role === 'reviewer' && patch.status === 'approved' && <MergePanel patch={patch} base={base} />}
       <div className="patch-action-bar">
         <Link
           className="button secondary small-button"

@@ -1582,3 +1582,11 @@ details[open] > summary > .disclosure-chevron {
     transition: none;
   }
 }
+
+/* Merge panel (reviewer) */
+.merge-panel h3 { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.merge-checks { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; }
+.merge-checks li { font-size: 0.9rem; padding: 6px 10px; border-left: 3px solid currentColor; }
+.merge-checks li.passed { color: var(--lime, #c8f560); }
+.merge-checks li.failed { color: #ff6b6b; }
+.merge-checks li strong { text-transform: capitalize; }

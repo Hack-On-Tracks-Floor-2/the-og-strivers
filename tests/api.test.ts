@@ -141,7 +141,7 @@ describe.sequential('real authentication, records and roles', () => {
     const submissions = (await developer.get('/api/submissions')).body.data;
     expect(submissions).toHaveLength(1);
     expect(submissions[0]).toMatchObject({ repositoryId, status: 'submitted' });
-    expect(Object.keys(submissions[0]).sort()).toEqual(['name', 'owner', 'repositoryId', 'status', 'submittedAt', 'updatedAt', 'url']);
+    expect(Object.keys(submissions[0]).sort()).toEqual(['branch', 'name', 'owner', 'pullRequestUrl', 'repositoryId', 'status', 'submittedAt', 'updatedAt', 'url']);
   });
   it('isolates other developer records, events and job creation', async () => {
     await other

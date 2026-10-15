@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { z } from 'zod';
-import { ArrowUpRight, FolderGit2 } from 'lucide-react';
+import { ArrowUpRight, FolderGit2, GitPullRequest } from 'lucide-react';
 import { RepositorySchema, RepositoryInputSchema, SubmissionSchema, type Submission } from '@proofpatch/shared';
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
@@ -12,6 +12,8 @@ const LABELS: Record<Submission['status'], string> = {
   scanning: 'Security scan running',
   in_review: 'With security reviewer',
   approved: 'Fix approved',
+  merging: 'Fix being merged',
+  fix_branch_ready: 'Fix branch ready',
   rejected: 'Reviewed — no fix approved',
   scan_failed: 'Scan could not complete',
 };
@@ -22,7 +24,7 @@ export function SubmissionsPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState('');
-  const active = state.data?.some((s) => s.status === 'submitted' || s.status === 'scanning');
+  const active = state.data?.some((s) => ['submitted', 'scanning', 'merging'].includes(s.status));
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(state.reload, 5000);
@@ -110,7 +112,17 @@ export function SubmissionsPage() {
                     {s.url} · Submitted {date(s.submittedAt)}
                   </span>
                 </div>
-                <span className={`mono submission-status ${s.status}`}>{LABELS[s.status]}</span>
+                <span className={`mono submission-status ${s.status}`}>
+                  {LABELS[s.status]}
+                  {s.pullRequestUrl && (
+                    <>
+                      {' · '}
+                      <a className="lime-text" href={s.pullRequestUrl} target="_blank" rel="noreferrer">
+                        {s.branch} <GitPullRequest size={13} />
+                      </a>
+                    </>
+                  )}
+                </span>
               </div>
             ))}
           </div>

@@ -1,15 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { cp, mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   FindingSchema,
+  MergeSchema,
   PatchSchema,
   VerificationRunSchema,
   type AnalysisRun,
   type Finding,
+  type Merge,
+  type MergeCheck,
   type Patch,
   type Repository,
   type TestSummary,
+  type User,
   type VerificationRun,
 } from '@proofpatch/shared';
 import type { Database } from '../database/index.js';
@@ -19,7 +23,11 @@ import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
-import { EditError } from '../patching/edits.js';
+import { EditError, unifiedDiff } from '../patching/edits.js';
+import { createAnalysisRun } from '../scanners/service.js';
+import type { GitHubPublisher } from '../merging/github.js';
+import { mergeFile } from '../merging/three-way.js';
+import { resolveConflict } from '../merging/resolver.js';
 import { AiError, TokenBudget, type AiClient, type AiUsage } from '../ai/client.js';
 import { evidenceService } from '../services/evidence.js';
 import { compareSuites, parseJUnit } from '../verification/junit.js';
@@ -42,6 +50,8 @@ export interface PipelineOptions {
   ai: AiClient | null;
   /** Optional trained vulnerability locator (see ml/). */
   locator?: Locator | null;
+  /** Clones the latest code and publishes merged fixes as GitHub branches + pull requests. */
+  github?: GitHubPublisher;
   tokenBudget?: number;
   maxAttempts?: number;
   testTimeoutMs?: number;
@@ -50,6 +60,10 @@ export interface Pipeline {
   status(): Promise<{ available: boolean; reason: string | null; ai: string[] }>;
   start(run: AnalysisRun): void;
   cancel(runId: string): boolean;
+  /** Merge an approved patch onto the latest code (queued like analysis runs). */
+  merge(patchId: string): void;
+  /** Publish an AI-resolved merge after a reviewer confirmed it. */
+  confirmMerge(patchId: string): void;
   idle(): Promise<void>;
   shutdown(): Promise<void>;
 }
@@ -414,6 +428,203 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     }
   }
 
+  // ---- Merge: approved fix → latest code → re-prove → GitHub branch + PR (or back to patching) ----
+  async function setMerge(patch: Patch, update: Partial<Merge>) {
+    const now = new Date().toISOString();
+    patch.merge = MergeSchema.parse({
+      status: 'merging', baseBranch: null, baseSha: null, branch: null, pullRequestUrl: null, message: '',
+      ...patch.merge, ...update, updatedAt: now,
+    });
+    patch.updatedAt = now;
+    await db.query('UPDATE patches SET document=$1 WHERE id=$2', [patch, patch.id]);
+  }
+  async function loadMergeContext(patchId: string) {
+    const patch = (await db.query<{ document: Patch }>('SELECT document FROM patches WHERE id=$1', [patchId])).rows[0]?.document;
+    if (!patch) throw new StageFailure('Patch not found.');
+    const run = (await db.query<{ document: AnalysisRun }>('SELECT document FROM runs WHERE id=$1', [patch.runId])).rows[0]!.document;
+    const repository = (await db.query<{ document: Repository }>('SELECT document FROM repositories WHERE id=$1', [run.repositoryId])).rows[0]!.document;
+    const finding = (await db.query<{ document: Finding }>('SELECT document FROM findings WHERE id=$1', [patch.findingId])).rows[0]?.document;
+    return { patch: PatchSchema.parse(patch), run, repository, finding };
+  }
+  async function publishFix(ctx: Awaited<ReturnType<typeof loadMergeContext>>, dir: string, signal: AbortSignal) {
+    const { patch, repository, finding } = ctx;
+    const github = options.github!;
+    const branch = `proofpatch/fix-${patch.id.slice(0, 8)}`;
+    const title = `Security fix: ${finding ? `${finding.cwe ?? ''} ${finding.category} in ${finding.file}`.trim() : 'ProofPatch fix'}`;
+    const body = [
+      'Opened by ProofPatch after a security reviewer approved this fix.',
+      '',
+      ...(patch.merge?.checks ?? []).map((c) => `- ${c.passed ? '✅' : '❌'} **${c.stage}**: ${c.summary}`),
+      ...(patch.merge?.resolvedByAi.length ? ['', `Merge conflicts in ${patch.merge.resolvedByAi.join(', ')} were resolved by AI and confirmed by a reviewer.`] : []),
+      '',
+      'Please review and merge this pull request yourself; ProofPatch never merges it automatically.',
+    ].join('\n');
+    if (!github.canPublish) {
+      await setMerge(patch, { status: 'failed', message: 'All proofs passed on the latest code, but GITHUB_TOKEN is not configured on the server, so the branch could not be pushed.' });
+      return;
+    }
+    const { pullRequestUrl } = await github.publish({ repository, dir, branch, baseBranch: patch.merge!.baseBranch!, title, body, signal });
+    await setMerge(patch, {
+      status: 'merged', branch, pullRequestUrl,
+      checks: [...(patch.merge?.checks ?? []), { stage: 'publish', passed: true, summary: `Pushed ${branch} and opened ${pullRequestUrl}` }],
+      message: `Fix branch ${branch} pushed and pull request opened for the developer.`,
+    });
+    await event(ctx.run, 'stage_completed', `Merged: branch ${branch} pushed, pull request ${pullRequestUrl}.`);
+  }
+
+  async function mergeOne(patchId: string, signal: AbortSignal) {
+    const ctx = await loadMergeContext(patchId);
+    const { patch, run, repository } = ctx;
+    const workspaces: string[] = [];
+    const checks: MergeCheck[] = [];
+    try {
+      if (!options.github) throw new StageFailure('Merging is not configured on this server.');
+      await setMerge(patch, { status: 'merging', message: 'Merging the approved fix onto the latest code.', checks: [], resolvedByAi: [], sentBackRunId: null });
+      await event(run, 'stage_started', `Merging the approved fix onto the latest ${repository.owner}/${repository.name}.`);
+      // 1. Latest default branch, with git history so the fix can be pushed as a branch.
+      const repoId = randomUUID();
+      workspaces.push(repoId);
+      await mkdir(store.root, { recursive: true });
+      const { baseBranch, baseSha } = await options.github.cloneLatest(repository, store.path(repoId), signal);
+      await setMerge(patch, { baseBranch, baseSha });
+
+      // 2. Lay the fix on top: unchanged files take the fix; changed files get a 3-way merge; conflicts go to the AI.
+      const files: Record<string, string> = {};
+      const resolvedByAi: string[] = [];
+      for (const file of patch.files) {
+        const latest = await readFile(join(store.path(repoId), file.path), 'utf8').catch(() => null);
+        if (latest === null) return await sendBack(ctx, checks, `${file.path} no longer exists on ${baseBranch}.`);
+        const merged = await mergeFile(file.original, latest, file.proposed);
+        if (merged.conflicts) {
+          if (!options.ai) throw new StageFailure('Merge conflict and no AI provider is configured to resolve it.');
+          const resolved = await resolveConflict({
+            path: file.path, conflicted: merged.text, fixDiff: patch.unifiedDiff, ai: options.ai,
+            budget: new TokenBudget(options.tokenBudget ?? 30_000), signal,
+            onUsage: async (usage, note) => {
+              await event(run, 'ai_usage', `${note}: ${usage.provider} ${usage.model}, ${usage.inputTokens} in + ${usage.outputTokens} out tokens.`);
+            },
+          });
+          files[file.path] = merged.restore(resolved.content);
+          resolvedByAi.push(file.path);
+        } else files[file.path] = merged.text;
+      }
+      if (patch.securityTest) files[patch.securityTest.path] = patch.securityTest.content;
+      const mergedDiff = (
+        await Promise.all(
+          Object.entries(files).map(async ([path, content]) =>
+            unifiedDiff(path, (await readFile(join(store.path(repoId), path), 'utf8').catch(() => '')), content),
+          ),
+        )
+      ).join('\n');
+      checks.push({
+        stage: 'apply', passed: true,
+        summary: resolvedByAi.length
+          ? `Upstream changed the same lines; AI resolved conflicts in ${resolvedByAi.join(', ')}.`
+          : `Fix applied cleanly on ${baseBranch} @ ${baseSha.slice(0, 7)}.`,
+      });
+      await setMerge(patch, { resolvedByAi, mergedDiff, checks: [...checks] });
+
+      // 3. Re-prove on the latest code: baseline → attack still works there → fix blocks it → nothing breaks.
+      const latest = await copyWorkspace({ id: repoId, repositoryId: repository.id, commitSha: baseSha }, {});
+      workspaces.push(latest.id);
+      await rm(join(store.path(latest.id), '.git'), { recursive: true, force: true });
+      const map = await inspectRepository(store.path(latest.id));
+      if (!map.testCommands.length) throw new StageFailure('The latest code no longer has a supported test suite.');
+      const testArgv = map.testCommands[0];
+      const prepared = await sandbox.prepare(latest, signal);
+      if (prepared.exitCode !== 0) throw new StageFailure(`Dependency installation failed on the latest code (exit ${prepared.exitCode}).`);
+      const baseline = await runSuite(latest, latest.id, testArgv, signal);
+      if (!baseline.tests?.total) throw new StageFailure('The latest code produced no test results.');
+      checks.push({ stage: 'baseline', passed: true, summary: `Latest code: ${summarize(baseline.tests)}.` });
+      if (!patch.securityTest) throw new StageFailure('The approved patch has no security test to re-prove it.');
+      const securityArgv = [...testArgv, '--tb=short', '-rP', patch.securityTest.path];
+      const withTest = await copyWorkspace(latest, { [patch.securityTest.path]: patch.securityTest.content });
+      workspaces.push(withTest.id);
+      const repro = await runSuite(withTest, latest.id, securityArgv, signal);
+      if (repro.out.exitCode === 0) {
+        checks.push({ stage: 'reproduction', passed: false, summary: 'The attack no longer works on the latest code: it was already fixed upstream.' });
+        await setMerge(patch, { status: 'already_fixed', checks: [...checks], message: 'The latest code already blocks this attack, so no branch was created.' });
+        await event(run, 'stage_completed', 'Merge: the vulnerability is already fixed on the latest code; nothing to merge.');
+        return;
+      }
+      checks.push({ stage: 'reproduction', passed: true, summary: 'The attack still works on the latest code (bug present).' });
+      const merged = await copyWorkspace(latest, files);
+      workspaces.push(merged.id);
+      const retest = await runSuite(merged, latest.id, securityArgv, signal);
+      const secure = retest.out.exitCode === 0 && !!retest.tests && retest.tests.failed + retest.tests.errors === 0;
+      checks.push({ stage: 'security_retest', passed: secure, summary: secure ? 'The merged fix blocks the attack.' : 'The attack still works after merging the fix.' });
+      if (!secure) return await sendBack(ctx, checks, 'After merging onto the latest code the attack still works.');
+      const after = await runSuite(merged, latest.id, testArgv, signal);
+      const gate = after.tests ? compareSuites(baseline.tests, after.tests) : null;
+      checks.push({
+        stage: 'regression', passed: !!gate?.ok,
+        summary: gate?.ok ? `${summarize(after.tests!)}; no previously passing test broke.` : `Broken: ${gate?.broken.slice(0, 5).map((b) => b.id).join(', ') ?? 'suite did not run'}.`,
+      });
+      if (!gate?.ok) return await sendBack(ctx, checks, 'Merging onto the latest code broke existing tests.');
+
+      // 4. AI-resolved merges wait for a reviewer; clean merges are published straight away.
+      if (resolvedByAi.length) {
+        await setMerge(patch, {
+          status: 'awaiting_review', checks: [...checks],
+          files: Object.entries(files).map(([path, content]) => ({ path, content })),
+          message: `AI resolved merge conflicts in ${resolvedByAi.join(', ')}. All proofs pass on the latest code; confirm to create the branch.`,
+        });
+        await event(run, 'stage_completed', 'Merge: AI-resolved conflicts pass every proof and await reviewer confirmation.');
+        return;
+      }
+      await setMerge(patch, { checks: [...checks] });
+      for (const [path, content] of Object.entries(files)) {
+        await mkdir(dirname(join(store.path(repoId), path)), { recursive: true });
+        await writeFile(join(store.path(repoId), path), content);
+      }
+      await publishFix(ctx, store.path(repoId), signal);
+    } catch (error) {
+      const message = signal.aborted ? 'Merge cancelled.' : error instanceof Error ? error.message : 'Merge failed.';
+      await setMerge(patch, { status: 'failed', checks: [...checks], message: message.slice(0, 1000) }).catch(() => {});
+      await event(run, 'stage_failed', `Merge failed: ${message.slice(0, 300)}`).catch(() => {});
+    } finally {
+      for (const id of workspaces) {
+        await store.remove(id).catch(() => {});
+        await sandbox.cleanup(id).catch(() => {});
+      }
+    }
+  }
+
+  /** A real bug on the latest code: the fix goes back to patching as a fresh analysis of the latest code. */
+  async function sendBack(ctx: Awaited<ReturnType<typeof loadMergeContext>>, checks: MergeCheck[], reason: string) {
+    const next = await createAnalysisRun(db, { id: ctx.run.ownerId } as User, ctx.run.repositoryId, true);
+    await setMerge(ctx.patch, { status: 'sent_back', checks: [...checks], sentBackRunId: next.id, message: `${reason} Sent back for patching on the latest code.` });
+    await event(ctx.run, 'stage_failed', `Merge: ${reason} Sent back for patching (new analysis ${next.id.slice(0, 8)}).`);
+    chain = chain.then(() => runOne(next));
+  }
+
+  /** Reviewer confirmed an AI-resolved merge: push exactly what was proven, if the branch has not moved. */
+  async function confirmOne(patchId: string, signal: AbortSignal) {
+    const ctx = await loadMergeContext(patchId);
+    const { patch } = ctx;
+    const dirId = randomUUID();
+    try {
+      if (patch.merge?.status !== 'awaiting_review') throw new StageFailure('This merge is not awaiting confirmation.');
+      await setMerge(patch, { status: 'merging', message: 'Reviewer confirmed; publishing the fix branch.' });
+      await mkdir(store.root, { recursive: true });
+      const latest = await options.github!.cloneLatest(ctx.repository, store.path(dirId), signal);
+      if (latest.baseSha !== patch.merge.baseSha) {
+        await store.remove(dirId).catch(() => {});
+        await event(ctx.run, 'stage_started', 'Merge: the branch moved since the proofs ran; merging and proving again.');
+        return await mergeOne(patchId, signal);
+      }
+      for (const { path, content } of patch.merge.files) {
+        await mkdir(dirname(join(store.path(dirId), path)), { recursive: true });
+        await writeFile(join(store.path(dirId), path), content);
+      }
+      await publishFix(ctx, store.path(dirId), signal);
+    } catch (error) {
+      await setMerge(patch, { status: 'failed', message: (error instanceof Error ? error.message : 'Publishing failed.').slice(0, 1000) }).catch(() => {});
+    } finally {
+      await store.remove(dirId).catch(() => {});
+    }
+  }
+
   async function runOne(run: AnalysisRun) {
     const controller = new AbortController();
     controllers.set(run.id, controller);
@@ -441,6 +652,12 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     start(run) {
       // One run at a time: container execution is CPU/memory heavy.
       chain = chain.then(() => runOne(run));
+    },
+    merge(patchId) {
+      chain = chain.then(() => mergeOne(patchId, new AbortController().signal));
+    },
+    confirmMerge(patchId) {
+      chain = chain.then(() => confirmOne(patchId, new AbortController().signal));
     },
     cancel(runId) {
       const controller = controllers.get(runId);
