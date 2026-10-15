@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys a git ref of this repo to the EC2 server. Run locally from the repo root:
+# Deploys a git ref of this repo to the existing Azure VM. Run locally from the repo root:
 #   bash deploy/aws/push.sh <server-ip> <path-to.pem> <frontend-origin> [git-ref]
 # Uploads the committed code (git archive, no node_modules/.data) and the local .env (secrets stay
 # out of git and are never printed), then runs setup.sh on the server.
@@ -14,7 +14,8 @@ SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new "ubuntu@$IP")
 
 tmp=$(mktemp -d)
 git archive --format=tar.gz -o "$tmp/proofpatch.tar.gz" "$REF"
-scp -i "$KEY" -o StrictHostKeyChecking=accept-new "$tmp/proofpatch.tar.gz" deploy/aws/setup.sh "ubuntu@$IP:/tmp/"
+git show "$REF:deploy/aws/setup.sh" > "$tmp/setup.sh"
+scp -i "$KEY" -o StrictHostKeyChecking=accept-new "$tmp/proofpatch.tar.gz" "$tmp/setup.sh" "ubuntu@$IP:/tmp/"
 grep -v "^PUBLIC_DEMO=" .env > "$tmp/proofpatch.env"
 [ "${PUBLIC_DEMO:-false}" = "true" ] && echo "PUBLIC_DEMO=true" >> "$tmp/proofpatch.env"
 scp -i "$KEY" "$tmp/proofpatch.env" "ubuntu@$IP:/tmp/proofpatch.env"

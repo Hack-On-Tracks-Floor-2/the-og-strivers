@@ -162,17 +162,19 @@ export function ReferenceRegression({ comparison = false }: { comparison?: boole
           <p>{report.aiReason}</p>
         </>
       )}
-      {user!.role === 'reviewer' && <div className="patch-action-bar">
-        <Link
-          className="button secondary small-button"
-          to={`${base}/${comparison ? 'regression' : 'patches?reference=regression'}`}
-        >
-          {comparison ? 'Open Regression Verification' : 'Inspect recorded source revision'}
-        </Link>
-        <Link className="button secondary small-button" to={`${base}/findings`}>
-          Security Findings
-        </Link>
-      </div>}
+      {user!.role === 'reviewer' && (
+        <div className="patch-action-bar">
+          <Link
+            className="button secondary small-button"
+            to={`${base}/${comparison ? 'regression' : 'patches?reference=regression'}`}
+          >
+            {comparison ? 'Open Regression Verification' : 'Inspect recorded source revision'}
+          </Link>
+          <Link className="button secondary small-button" to={`${base}/findings`}>
+            Security Findings
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
@@ -198,10 +200,17 @@ export function RegressionVerificationPage() {
       ) : (
         <>
           <ReferenceRegression />
-          {user!.role === 'reviewer' ? <>
-            <h2>Repository and patch evidence</h2>
-            <ArtifactsPage kind="evidence" embedded />
-          </> : <p className="scope-explanation">Repository patch verification and merge proofs are managed in the Security Reviewer workspace.</p>}
+          {user!.role === 'reviewer' ? (
+            <>
+              <h2>Repository and patch evidence</h2>
+              <ArtifactsPage kind="evidence" embedded />
+            </>
+          ) : (
+            <p className="scope-explanation">
+              Repository patch verification and merge proofs are managed in the Security Reviewer
+              workspace.
+            </p>
+          )}
         </>
       )}
     </>

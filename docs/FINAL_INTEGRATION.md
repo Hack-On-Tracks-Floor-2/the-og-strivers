@@ -2,7 +2,7 @@
 
 ## Available application routes
 
-Both Developer and Security Reviewer dashboards expose **ML Intelligence** (`/:role/app/ml`) and **Regression Verification** (`/:role/app/regression`). Existing Patch Studio remains intact and links a selected patch to its scoped regression evidence and corresponding finding. The recorded regression reference fixture also opens its actual source snapshots in the same comparison editor at `/:role/app/patches?reference=regression`.
+Both Developer and Security Reviewer dashboards expose **ML Intelligence** (`/:role/app/ml`) and **Regression Verification** (`/:role/app/regression`). Aditya's developer/reviewer access split is preserved: developers submit repositories and can inspect the classifier and recorded reference scenario; repository findings, patches, private evidence and Merge remain reviewer-only. Existing Patch Inspection remains intact and links a selected patch to its scoped regression evidence and corresponding finding. The recorded regression reference fixture also opens its actual source snapshots in the same comparison editor at `/reviewer/app/patches?reference=regression`.
 
 The comparison vocabulary remains **Current source / Proposed revision**. No model was retrained during integration. No detector, patch generator, verification algorithm, or existing review capability was removed or replaced.
 
@@ -24,29 +24,33 @@ Reference-fixture evidence is explicitly separate from user repository verificat
 
 ## Runtime and deployment
 
-The owner confirms the existing backend is on **Microsoft Azure**. The checked-out repository and related local regression worktrees contain no Azure resource ID/name, deployment workflow, API-origin hostname, Bicep/Terraform/ARM definition, publish profile, or SSH deployment runbook. No Azure CLI, Azure credential session, or SSH host configuration is available here. Caddy's response header does not identify whether the Azure resource is a VM, App Service, or Container Apps; the exact resource cannot responsibly be inferred. Updating the existing backend requires its resource/SSH hostname and current deployment process. Do not create another backend or change the functioning proxy/regression service to guess these details.
+The owner identified the existing backend as Azure VM **proofpatch-api**, resource group **proofpatch-rg**, subscription **Azure for Students**, region **malaysiawest**, Ubuntu 24.04, size Standard_DS2_v2_Promo. Its IP is **85.211.253.253**, and its HTTPS API origin is **https://85-211-253-253.sslip.io**. Caddy forwards `/api/*` to `127.0.0.1:3001`. The existing systemd service is **proofpatch-api**, running as user **proofpatch** from `/opt/proofpatch`; persistent data/work files are `/opt/proofpatch/.data`.
 
-The frontend uses existing same-origin `/api` calls and the existing Vite development proxy. The supplied Vercel website responds to `/api/health`, and `/api/ml/model-info` returns an authentication challenge; this alone does **not** prove that the deployed backend has the new inference route or saved model. Responses include `Via: Caddy`, consistent with an existing proxy/backend arrangement, but its target is not recorded in this checkout. No tracked Vercel configuration or project linkage was found. The existing online proxy configuration is preserved.
+The integration is based on **fd456bb** from `claude/trained-locator`, which the owner identifies as the live role split, public demo login, Merge feature and deployment script revision. Those features and the existing optional `DETECTOR_*` locator hook are preserved. The Java classifier is an independently invoked, experimental classification API; it does not introduce another code-search locator or alter patch generation, application, merge proofs or regression execution.
 
-Vercel serving the frontend does not automatically install or run the local Python worker. Run the Node API and Python together on a persistent backend host with Python **3.12**, Node **22.12+**, the complete repository, and the committed artifacts. For that host:
+The existing runbook is `deploy/aws/push.sh` plus `deploy/aws/setup.sh`; the historical directory name does not identify the cloud provider. `deploy/vercel.json` records the same-origin rewrite to the Azure HTTPS origin. No second backend or proxy change is required.
+
+The required SSH key `~/.ssh/id_rsa` exists only on Aditya's laptop, according to the owner. It is absent from this workspace, and no authenticated Azure session is available here. The combined branch can therefore be pushed for Aditya to deploy, but this workspace cannot honestly claim a completed Azure rollout.
+
+From Aditya's existing repository and production `.env`, fetch and check out the combined branch, then deploy that exact ref:
 
 ```sh
-npm ci
-python3 -m pip install --target ml/mini_classifier/.deps --only-binary=:all: -r ml/mini_classifier/requirements.txt
-npm run build
-# Set MINI_ML_PYTHON to the trusted absolute python3 executable.
-# Preserve the backend's existing APP_ORIGIN, database, session, and pipeline settings.
-npm run start
+git fetch origin
+git switch --track origin/codex/ml-azure-integration
+PUBLIC_DEMO=true bash deploy/aws/push.sh 85.211.253.253 ~/.ssh/id_rsa https://proofpatch-r2.vercel.app HEAD
 ```
 
-Keep Vercel's existing `/api/:path*` proxy directed to this backend. If setting up a separate backend, configure that same-origin rewrite in the Vercel project to its real HTTPS origin; do not insert a guessed origin. Existing authentication cookies remain same-origin, with no new CORS or cross-site cookie policy. A configured Docker verification pipeline remains a separate existing requirement; the ML worker does not provide a Docker sandbox.
+Do not deploy the earlier main/ML-only ref over this VM: deployment replaces the application code. Keep Aditya's half-finished JavaScript work local and use a clean checkout if needed. Use Aditya's existing server configuration, not another developer's local `.env`. The updated runbook takes both application archive and setup script from the requested ref, preserves the existing `.data` behavior, installs Python 3.12 dependencies in `ml/mini_classifier/.venv`, sets `MINI_ML_PYTHON`, checks trusted artifact hashes, and performs a genuine held-out inference before restarting the existing service. No new listening port or service is introduced.
 
-An online integration claim requires an authenticated real classification after backend deployment, plus verification of the frontend deployment revision. A public health response or unauthenticated 401 is insufficient. GitHub deployment metadata was unavailable without authenticated access during initial checks. Following explicit user approval, one integration-test developer account was created; its credentials stay in ignored local QA storage. Authenticated deployed checks returned **404 for `/api/ml/model-info`**, and **200 with genuine executed regression evidence** for `/api/regression-demo/evidence`. The deployed backend therefore still needs this ML integration deployed. Production frontend builds now emit `/deployment-info.json` with the source commit and build timestamp, so a later deployment can be checked directly rather than assumed.
+Redeploy the existing Vercel **proofpatch-r2** project from the same combined ref with the existing `deploy/vercel.json` configuration and demo environment settings. API deployment alone does not update frontend navigation. Existing authentication cookies remain same-origin, with no new CORS or cross-site cookie policy. The Docker pipeline remains an independent existing requirement; the classifier does not provide sandbox proof.
+
+An online integration claim requires an authenticated real classification after backend deployment, plus verification of the frontend deployment revision. A public health response or unauthenticated 401 is insufficient. Following explicit user approval, one integration-test developer account was created; its credentials stay in ignored local QA storage. The latest authenticated deployed checks returned **404 for `/api/ml/model-info`**, and **200 with genuine executed regression evidence** for `/api/regression-demo/evidence`: baseline 5/5, expected reproduction 0/3, patched security 3/3, regression 5/5, verdict VERIFIED. The live backend still needs this combined ref deployed. Production frontend builds emit `/deployment-info.json` with source commit/build timestamp, so the frontend rollout can be verified directly.
 
 ## Validation commands
 
 ```sh
 npm run build
+# Windows: set PYTHON_BIN to the installed Python executable before running the suite.
 npm test
 python ml/mini_classifier/test_classifier.py
 python ml/mini_classifier/predict.py --file ml/mini_classifier/artifacts/heldout-example.java --language java
@@ -54,4 +58,4 @@ python ml/mini_classifier/predict.py --file ml/mini_classifier/artifacts/heldout
 
 `tests/ml-api.test.ts` performs real Python inference on the saved held-out example and verifies authentication, recorded metrics, unsupported languages, and rejection of caller-supplied model/command fields. It requires the Python dependencies and trusted model artifacts. Browser checks cover both dashboard links, actual classification, reference source comparison, and recorded regression outcomes.
 
-Completed results: the full workspace build passed. The full suite had 71 passing tests and one existing pipeline retry case hit its 30-second timeout while the build was running concurrently. That unchanged case passed in isolation in 9.3 seconds with a 90-second test timeout. All five genuine ML API checks and the executed regression integration test passed. The reviewer UI returned CWE-327 with the saved model's actual 98.56% uncalibrated probability for its held-out example; the regression page displayed baseline 5/5, expected reproduction 0/3, patched security 3/3, and unchanged regression 5/5 from the genuine retained record.
+Completed combined-branch results: **78/78 workspace tests passed**, including all 20 existing pipeline/locator/Merge tests, 19 authentication/role API tests, five genuine ML API checks, the executed regression integration test, 20 UI data tests and 13 contract tests. The **full shared/API/frontend production build passed**; Vite retains its existing Monaco chunk-size warning. The Windows test process used the installed Python 3.12 runtime through `PYTHON_BIN`; no scanner or pipeline algorithm was changed to make tests pass. All six saved-classifier tests passed. CLI inference reproduced **CWE-327**, probability **0.9856365584438977**, from the actual held-out example without retraining. Both roles' ML/regression navigation was checked in the browser; developers retained submission-only repository access, and the reviewer demo login still worked. The regression page displayed baseline 5/5, expected reproduction 0/3, patched security 3/3, and unchanged regression 5/5 from the genuine retained record. Azure deployment script syntax passed `bash -n`; an actual Azure rollout remains dependent on the SSH-key holder.

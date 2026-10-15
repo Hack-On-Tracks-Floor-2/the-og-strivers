@@ -1,5 +1,6 @@
 """Predict a Java snippet from --file or stdin; JSON output, no server required."""
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -16,6 +17,10 @@ def main():
     code=args.file.read_text(encoding='utf-8') if args.file else sys.stdin.read(200001)
     if len(code)>200000: raise SystemExit('Input exceeds the 200,000-character limit.')
     if not (args.artifacts/'metadata.json').exists(): raise SystemExit('No trained model found. Run train.py first.')
+    integrity=json.loads((args.artifacts/'integrity.json').read_text(encoding='utf-8'))
+    for name in ('model.joblib','vectorizer.joblib'):
+        if hashlib.sha256((args.artifacts/name).read_bytes()).hexdigest()!=integrity[name]:
+            raise SystemExit('Saved classifier integrity check failed.')
     metadata=json.loads((args.artifacts/'metadata.json').read_text(encoding='utf-8'))
     # Only load trusted artifacts produced by the local training command.
     model=joblib.load(args.artifacts/'model.joblib'); vectorizer=joblib.load(args.artifacts/'vectorizer.joblib')
