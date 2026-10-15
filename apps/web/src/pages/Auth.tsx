@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { z } from 'zod';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, Eye, EyeOff, LockKeyhole, FlaskConical } from 'lucide-react';
 import { UserSchema, LoginSchema, RegisterSchema } from '@proofpatch/shared';
@@ -24,7 +25,44 @@ export function AuthPage({
   const [password, setPassword] = useState('');
   const [demoFilled, setDemoFilled] = useState(false);
   if (loading) return <Loading />;
-  if (user) return <Navigate to={`/${user.role}/app`} replace />;
+  if (user && user.role === role) return <Navigate to={`/${user.role}/app`} replace />;
+  if (user) {
+    // Signed in with the other role: say so instead of silently redirecting.
+    const other = user.role === 'reviewer' ? 'security reviewer' : 'developer';
+    const signOut = async () => {
+      setBusy(true);
+      try {
+        await api('/auth/logout', z.object({ loggedOut: z.boolean() }), {});
+        setUser(null);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <main className="auth-page">
+        <section className="auth-card switch-account">
+          <Eyebrow>ALREADY SIGNED IN</Eyebrow>
+          <h1>You're signed in as a {other}.</h1>
+          <p>
+            {user.email} is using this browser. Sign out to continue to the{' '}
+            {role === 'reviewer' ? 'security reviewer' : 'developer'} portal, or go back to your
+            workspace.
+          </p>
+          {error && <ErrorBox message={error} />}
+          <div className="switch-actions">
+            <button className="button primary" disabled={busy} onClick={signOut}>
+              {busy ? 'Signing out…' : 'Sign out and continue'}
+            </button>
+            <button className="button secondary" onClick={() => navigate(`/${user.role}/app`)}>
+              Back to my {other} workspace
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
   function fillDemoCredentials() {
     if (!reviewerDemo || role !== 'reviewer') return;
     setEmail(reviewerDemo.email);
