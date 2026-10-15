@@ -1,105 +1,82 @@
-import { useState } from 'react';
 import type { Finding, Patch, VerificationRun, RunEvent } from '@proofpatch/shared';
+import { ChevronDown, Download, FileCode2 } from 'lucide-react';
 import { Eyebrow, Status, date } from './ui';
+import { durationMs, formatDuration, stageLabels } from '../lib/security-data';
+import { PatchWorkspace } from './patches/PatchWorkspace';
+
 export function FindingCard({ finding }: { finding: Finding }) {
   return (
-    <article className="panel details finding-card">
+    <article className="panel details finding-card" id={`finding-${finding.id}`}>
       <div className="artifact-heading">
-        <Eyebrow>{finding.category}</Eyebrow>
+        <div>
+          <Eyebrow>{finding.cwe ?? 'CWE NOT SUPPLIED'}</Eyebrow>
+          <h2>{finding.category}</h2>
+        </div>
         <Status value={finding.severity} />
       </div>
-      <h2>
-        {finding.file}:{finding.startLine}–{finding.endLine}
-      </h2>
-      <span className="mono muted">
-        {finding.cwe ?? 'CWE N/A'} · CONFIDENCE / {Math.round(finding.confidence * 100)}% · FOUND BY /{' '}
-        {finding.source === 'scanner+ai' ? 'SCANNER + AI' : finding.source.toUpperCase()}
-      </span>
-      <h3>Root cause</h3>
-      <p>{finding.rootCause}</p>
-      <h3>Supporting evidence</h3>
-      <ul>
-        {finding.evidence.map((text, i) => (
-          <li key={i}>{text}</li>
-        ))}
-      </ul>
-      <h3>Remediation</h3>
-      <p>{finding.recommendation}</p>
-      <code>
-        FINDING / {finding.id} · RUN / {finding.runId}
-      </code>
-    </article>
-  );
-}
-export function PatchViewer({ patch }: { patch: Patch }) {
-  const [tab, setTab] = useState<'diff' | 'original' | 'proposed' | 'security'>('diff');
-  const tabs = (['diff', 'original', 'proposed', 'security'] as const).filter(
-    (value) => value !== 'security' || !!patch.securityTest,
-  );
-  return (
-    <article className="panel">
-      <div className="panel-heading">
-        <div>
-          <Eyebrow>PATCH / {patch.id.slice(0, 8)}</Eyebrow>
-          <h2>Proposed changes</h2>
-          <span className="mono muted">ATTEMPT / {patch.attempt}</span>
-        </div>
-        <Status value={patch.status} />
+      <div className="finding-location">
+        <FileCode2 size={16} />
+        <code>
+          {finding.file}:{finding.startLine}–{finding.endLine}
+        </code>
       </div>
-      <div className="code-tabs">
-        {tabs.map((value) => (
-          <button
-            key={value}
-            className={tab === value ? 'active' : ''}
-            onClick={() => setTab(value)}
-          >
-            {value === 'diff'
-              ? 'Unified diff'
-              : value === 'original'
-                ? 'Original code'
-                : value === 'proposed'
-                  ? 'Proposed code'
-                  : 'Exploit test'}
-          </button>
-        ))}
+      <div className="finding-source">
+        <span>
+          Detection source{' '}
+          <strong>
+            {finding.source === 'scanner+ai'
+              ? 'Static scanner + AI'
+              : finding.source === 'scanner'
+                ? 'Static scanner'
+                : 'AI investigation'}
+          </strong>
+        </span>
+        <span>
+          Model confidence <strong>{Math.round(finding.confidence * 100)}%</strong>
+        </span>
       </div>
-      {patch.explanation && <p className="field-help">{patch.explanation}</p>}
-      {tab === 'security' && patch.securityTest ? (
-        <div>
-          <div className="file-path mono">{patch.securityTest.path}</div>
-          <p className="field-help">
-            Fails on the original code (vulnerability reproduced) and passes on the patch.
-          </p>
-          <pre className="code-block">{patch.securityTest.content}</pre>
-        </div>
-      ) : tab === 'diff' ? (
-        <pre className="code-block">
-          {patch.unifiedDiff.split('\n').map((line, i) => (
-            <span
-              key={i}
-              className={
-                line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : ''
-              }
-            >
-              {line}
-              {'\n'}
-            </span>
-          ))}
-        </pre>
-      ) : (
-        patch.files.map((file) => (
-          <div key={file.path}>
-            <div className="file-path mono">{file.path}</div>
-            <pre className="code-block">{tab === 'original' ? file.original : file.proposed}</pre>
-          </div>
-        ))
-      )}
+      <p className="field-help">
+        Confidence describes the detection assessment; severity is the backend’s separate risk
+        classification.
+      </p>
+      <div className="finding-body">
+        <section>
+          <h3>Root cause</h3>
+          <p>{finding.rootCause}</p>
+        </section>
+        <section>
+          <h3>Recommended remediation</h3>
+          <p>{finding.recommendation}</p>
+        </section>
+      </div>
+      <details className="supporting-evidence">
+        <summary>
+          Supporting evidence{' '}
+          <span>
+            {finding.evidence.length} recorded {finding.evidence.length === 1 ? 'item' : 'items'}
+          </span>
+        </summary>
+        {finding.evidence.length ? (
+          <ul>
+            {finding.evidence.map((text, index) => (
+              <li key={index}>{text}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>No supporting evidence text was supplied.</p>
+        )}
+      </details>
       <div className="artifact-reference mono">
-        RUN / {patch.runId} · FINDING / {patch.findingId}
+        Finding {finding.id} · Run {finding.runId}
       </div>
     </article>
   );
 }
+// Retained export for any teammate components using the previous entry point.
+export function PatchViewer({ patch }: { patch: Patch }) {
+  return <PatchWorkspace patch={patch} />;
+}
+
 export function EvidenceTimeline({
   events,
   verification,
@@ -112,69 +89,135 @@ export function EvidenceTimeline({
       id: event.id,
       time: event.createdAt,
       title: event.kind.replaceAll('_', ' '),
-      body: event.message,
+      message: event.message,
       run: event.runId,
       artifact: event.artifactId,
-      verification: null as VerificationRun | null,
+      execution: null as VerificationRun | null,
     })),
-    ...verification.map((item) => ({
-      id: item.id,
-      time: item.createdAt,
-      title: item.stage.replaceAll('_', ' '),
-      body: item.logs,
-      run: item.runId,
-      artifact: item.artifactId,
-      verification: item,
+    ...verification.map((record) => ({
+      id: record.id,
+      time: record.createdAt,
+      title: stageLabels[record.stage],
+      message: '',
+      run: record.runId,
+      artifact: record.artifactId,
+      execution: record,
     })),
-  ].sort((a, b) => a.time.localeCompare(b.time));
+  ].sort((a, b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
   return (
     <section className="panel details evidence-timeline">
-      {items.map((item) => (
-        <article className="timeline-item" key={item.id}>
-          <span className="timeline-dot" />
-          <div className="artifact-heading">
-            <h3>{item.title}</h3>
-            {item.verification && <Status value={item.verification.status} />}
-          </div>
-          <time className="mono muted">{date(item.time)}</time>
-          <p>{item.body}</p>
-          {item.verification && (
-            <>
-              <div className="mono">EXIT CODE / {item.verification.exitCode ?? 'NOT RECORDED'}</div>
-              {item.verification.tests && (
-                <div className="mono">
-                  TESTS / {item.verification.tests.passed} passed · {item.verification.tests.failed}{' '}
-                  failed · {item.verification.tests.errors} errors · {item.verification.tests.skipped}{' '}
-                  skipped ({item.verification.tests.total})
-                </div>
+      {items.map((item) => {
+        const record = item.execution;
+        const skipped =
+          record?.tests && record.tests.total > 0 && record.tests.skipped === record.tests.total;
+        const status = skipped ? 'skipped' : record?.status;
+        return (
+          <details
+            className={`timeline-item evidence-disclosure ${status ? `evidence-${status}` : ''}`}
+            key={item.id}
+            open={status === 'failed' || undefined}
+          >
+            <summary>
+              <span className="timeline-dot" />
+              <div className="evidence-summary">
+                <span className="eyebrow">{record ? 'PATCH EXECUTION' : 'RUN ACTIVITY'}</span>
+                <h3>{item.title}</h3>
+                <time>{date(item.time)}</time>
+              </div>
+              {status && <Status value={status} />}
+              <ChevronDown className="disclosure-chevron" size={16} />
+            </summary>
+            <div className="evidence-detail">
+              {item.message && <p>{item.message}</p>}
+              {record && (
+                <>
+                  <div className="execution-facts">
+                    <span>
+                      Exit code <strong>{record.exitCode ?? 'Not recorded'}</strong>
+                    </span>
+                    <span>
+                      Duration{' '}
+                      <strong>
+                        {formatDuration(durationMs(record.createdAt, record.completedAt))}
+                      </strong>
+                    </span>
+                    <span>
+                      Patch <code>{record.patchId.slice(0, 8)}</code>
+                    </span>
+                  </div>
+                  {record.stage === 'reproduction' && (
+                    <p className="evidence-context">
+                      The security test is expected to fail against the current source. A successful
+                      reproduction stage records that expected failure; it does not mean the
+                      vulnerable code passed a security test.
+                    </p>
+                  )}
+                  {skipped && (
+                    <p className="evidence-context">
+                      Every test in this stage was skipped. This provides no passing security
+                      evidence.
+                    </p>
+                  )}
+                  {record.tests && (
+                    <>
+                      <div className="test-counts">
+                        <span>{record.tests.passed} passed</span>
+                        <span>{record.tests.failed} failed</span>
+                        <span>{record.tests.errors} errors</span>
+                        <span>{record.tests.skipped} skipped</span>
+                        <span>{record.tests.total} total</span>
+                      </div>
+                      <details className="test-case-disclosure">
+                        <summary>Individual test outcomes ({record.tests.cases.length})</summary>
+                        <ul>
+                          {record.tests.cases.map((test, index) => (
+                            <li key={`${test.id}:${index}`}>
+                              <code>{test.id}</code>
+                              <Status value={test.outcome} />
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </>
+                  )}
+                  <h4>Recorded command</h4>
+                  <pre className="code-block execution-command">
+                    {record.command.length
+                      ? record.command.map((argument) => JSON.stringify(argument)).join(' ')
+                      : 'No command was recorded.'}
+                  </pre>
+                  <h4>Execution log</h4>
+                  <pre className="code-block execution-log">
+                    {record.logs || 'No log content was recorded.'}
+                  </pre>
+                </>
               )}
-              <pre className="code-block">{JSON.stringify(item.verification.command)}</pre>
-            </>
-          )}
-          <code>
-            RUN / {item.run}
-            <br />
-            RECORD / {item.id}
-            {item.artifact && (
-              <>
-                <br />
-                ARTIFACT /{' '}
-                {/^[0-9a-f]{40}$/.test(item.artifact) ? (
+              <div className="evidence-references">
+                <code>
+                  Run {item.run}
+                  <br />
+                  Record {item.id}
+                  {item.artifact && (
+                    <>
+                      <br />
+                      Artifact {item.artifact}
+                    </>
+                  )}
+                </code>
+                {item.artifact && /^[0-9a-f]{40}$/.test(item.artifact) && (
                   <a
-                    className="lime-text"
+                    className="button secondary small-button"
                     href={`/api/runs/${item.run}/artifacts/${item.artifact}`}
                     download
                   >
-                    {item.artifact.slice(0, 12)} ↓
+                    <Download size={14} /> Download artifact
                   </a>
-                ) : (
-                  item.artifact
                 )}
-              </>
-            )}
-          </code>
-        </article>
-      ))}
+              </div>
+            </div>
+          </details>
+        );
+      })}
     </section>
   );
 }
