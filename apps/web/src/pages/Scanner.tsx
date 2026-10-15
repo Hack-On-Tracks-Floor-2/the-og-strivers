@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { Play, Circle, Check, ArrowUpRight, Info } from 'lucide-react';
+import { Play, Circle, Check, ArrowUpRight, Info, X } from 'lucide-react';
 import {
   RepositorySchema,
   AnalysisRunSchema,
@@ -22,10 +22,25 @@ const STEPS: [string, AnalysisRun['status'][]][] = [
   ['Exploit test & regression proof', ['verifying']],
   ['Security review', ['needs_review', 'verified']],
 ];
-function stepState(run: AnalysisRun | undefined, index: number) {
+// For failed runs, find how far the pipeline got from its recorded events.
+const REACHED: RegExp[] = [/registered/, /^Cloned at|^Mapped/, /^Baseline:|^Search funnel/, /^Generating patch/, /^Reproduced|^Security retest|^Regression/, /^Proof complete/];
+function reachedStep(events: RunEvent[] | undefined) {
+  let reached = 0;
+  for (const e of events ?? [])
+    REACHED.forEach((re, i) => {
+      if (re.test(e.message)) reached = Math.max(reached, i);
+    });
+  return reached;
+}
+function stepState(run: AnalysisRun | undefined, index: number, events?: RunEvent[]) {
   if (!run || run.status === 'not_configured') return index === 0 ? 'done' : 'idle';
+  if (run.status === 'failed') {
+    const reached = reachedStep(events);
+    // The step after the last completed milestone is where it stopped.
+    const stoppedAt = Math.min(reached + 1, STEPS.length - 1);
+    return index < stoppedAt ? 'done' : index === stoppedAt ? 'failed' : 'idle';
+  }
   const current = STEPS.findIndex(([, statuses]) => statuses.includes(run.status));
-  if (run.status === 'failed') return 'failed';
   if (index < current || (index === current && index === STEPS.length - 1)) return 'done';
   return index === current ? 'active' : 'idle';
 }
@@ -193,10 +208,16 @@ export function ScannerPage() {
             </div>
             <div className="pipeline">
               {STEPS.map(([step], i) => {
-                const s = stepState(run, i);
+                const s = stepState(run, i, eventList);
                 return (
                   <div key={step} className={s === 'done' ? 'pipeline-step recorded' : 'pipeline-step'}>
-                    {s === 'done' ? <Check size={16} /> : <Circle size={13} />}
+                    {s === 'done' ? (
+                      <Check size={16} />
+                    ) : s === 'failed' ? (
+                      <X size={16} style={{ color: 'var(--danger, #ff5a4e)' }} />
+                    ) : (
+                      <Circle size={13} />
+                    )}
                     <span>{step}</span>
                     <small>
                       {s === 'done'
@@ -204,7 +225,7 @@ export function ScannerPage() {
                         : s === 'active'
                           ? 'RUNNING…'
                           : s === 'failed'
-                            ? 'STOPPED'
+                            ? 'STOPPED HERE'
                             : 'NOT EXECUTED'}
                     </small>
                   </div>
