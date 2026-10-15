@@ -7,13 +7,13 @@ const portals = {
   developer: {
     eyebrow: 'BUILD WITH CONFIDENCE',
     title: 'DEVELOPERS',
-    description: 'Submit repositories. Detect vulnerabilities. Track patches and verification.',
+    description: 'Submit your repository for a security review and follow its status.',
     footer: '01 / SUBMIT & TRACK',
   },
   reviewer: {
     eyebrow: 'TURN RISK INTO EVIDENCE',
     title: 'SECURITY REVIEWERS',
-    description: 'Investigate findings. Review AI-generated patches. Validate security evidence.',
+    description: 'Run scans. Investigate findings. Review AI-generated patches and their test evidence.',
     footer: '02 / INVESTIGATE & REVIEW',
   },
 } as const;

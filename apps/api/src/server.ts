@@ -39,7 +39,8 @@ await provisionReviewer(
       }
     : undefined,
 );
-if (!production && process.env.DEVELOPER_DEMO_EMAIL && process.env.DEVELOPER_DEMO_PASSWORD)
+// PUBLIC_DEMO=true also creates the demo developer in production (hackathon demo only).
+if ((!production || process.env.PUBLIC_DEMO === 'true') && process.env.DEVELOPER_DEMO_EMAIL && process.env.DEVELOPER_DEMO_PASSWORD)
   await provisionDemoDeveloper(db, {
     email: process.env.DEVELOPER_DEMO_EMAIL,
     password: process.env.DEVELOPER_DEMO_PASSWORD,

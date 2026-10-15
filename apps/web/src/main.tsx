@@ -11,6 +11,7 @@ import { ScannerPage } from './pages/Scanner';
 import { ArtifactsPage } from './pages/Artifacts';
 import { ReviewsPage } from './pages/Reviews';
 import { SettingsPage } from './pages/Settings';
+import { SubmissionsPage } from './pages/Submissions';
 import './styles/index.css';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -23,21 +24,21 @@ createRoot(document.getElementById('root')!).render(
               <Route path={`/${role}`} element={<Landing role={role} />} />
               <Route path={`/${role}/login`} element={<AuthPage role={role} />} />
               <Route path={`/${role}/app`} element={<Dashboard role={role} />}>
-                <Route index element={<OverviewPage />} />
-                <Route path="findings" element={<ArtifactsPage kind="findings" />} />
-                <Route path="patches" element={<ArtifactsPage kind="patches" />} />
-                <Route path="evidence" element={<ArtifactsPage kind="evidence" />} />
                 {role === 'developer' ? (
+                  // Developers only submit repositories. Findings, patches and evidence are reviewer-only.
+                  <Route index element={<SubmissionsPage />} />
+                ) : (
                   <>
+                    <Route index element={<OverviewPage />} />
                     <Route path="repositories" element={<RepositoriesPage />} />
                     <Route path="repositories/:id" element={<RepositoryDetailPage />} />
                     <Route path="scanner" element={<ScannerPage />} />
-                    <Route path="settings" element={<SettingsPage />} />
-                  </>
-                ) : (
-                  <>
                     <Route path="queue" element={<ReviewsPage />} />
+                    <Route path="findings" element={<ArtifactsPage kind="findings" />} />
+                    <Route path="patches" element={<ArtifactsPage kind="patches" />} />
+                    <Route path="evidence" element={<ArtifactsPage kind="evidence" />} />
                     <Route path="decisions" element={<ReviewsPage decisions />} />
+                    <Route path="settings" element={<SettingsPage />} />
                   </>
                 )}
               </Route>

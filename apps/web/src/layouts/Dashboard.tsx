@@ -21,22 +21,17 @@ import { Brand, Eyebrow, Loading, ErrorBox } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 import { HealthSchema } from '@proofpatch/shared';
-const developerNav = [
-  ['', 'Overview', LayoutDashboard],
-  ['repositories', 'Repositories', FolderGit2],
-  ['scanner', 'Security Scanner', ScanLine],
-  ['findings', 'Findings', ShieldAlert],
-  ['patches', 'Patch Studio', GitPullRequest],
-  ['evidence', 'Evidence Rail', Layers],
-  ['settings', 'Settings', Settings],
-] as const;
+const developerNav = [['', 'Repositories', FolderGit2]] as const;
 const reviewerNav = [
   ['', 'Review Overview', LayoutDashboard],
+  ['repositories', 'Repositories', FolderGit2],
+  ['scanner', 'Security Scanner', ScanLine],
   ['queue', 'Review Queue', ListChecks],
   ['findings', 'Security Findings', ShieldAlert],
   ['patches', 'Patch Inspection', GitPullRequest],
   ['evidence', 'Evidence Rail', Layers],
   ['decisions', 'Review Decisions', ClipboardCheck],
+  ['settings', 'Settings', Settings],
 ] as const;
 export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
   const auth = useAuth();

@@ -160,7 +160,7 @@ export function ScannerPage() {
         {!state.data?.repos.length && !state.loading && (
           <p className="field-help">
             Add a repository first.{' '}
-            <Link to="/developer/app/repositories" className="lime-text">
+            <Link to="/reviewer/app/repositories" className="lime-text">
               Go to repositories ↗
             </Link>
           </p>

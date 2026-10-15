@@ -14,6 +14,7 @@ import {
   type AnalysisRun,
   type Patch,
   type VerificationRun,
+  SubmissionSchema,
 } from '@proofpatch/shared';
 import type { Database } from '../database/index.js';
 import { authenticate, currentUser, requireRole } from '../middleware/auth.js';
@@ -33,6 +34,17 @@ import { join } from 'node:path';
 import { defaultRegressionEvidence } from '../verification/regression-demo.js';
 
 const reviewable = `EXISTS (SELECT 1 FROM patches p WHERE p.run_id=runs.id AND p.document->>'status' IN ('needs_review','approved','rejected'))`;
+/** One plain status a developer may see for their submission. */
+function submissionStatus(run: AnalysisRun | undefined, patchStates: string[]) {
+  if (!run) return 'submitted';
+  if (patchStates.includes('approved')) return 'approved';
+  if (patchStates.includes('needs_review')) return 'in_review';
+  if (patchStates.length && patchStates.every((s) => s === 'rejected')) return 'rejected';
+  if (run.status === 'failed') return 'scan_failed';
+  if (run.status === 'not_configured') return 'submitted';
+  if (['needs_review', 'verified'].includes(run.status)) return 'in_review';
+  return 'scanning';
+}
 export async function apiRouter(db: Database, production: boolean, pipeline?: Pipeline) {
   const router = Router();
   const cookie = {
@@ -59,12 +71,9 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
   const send = (res: import('express').Response, data: unknown, status = 200) =>
     res.status(status).json({ data, version: API_VERSION });
   const id = (req: Request) => Id.parse(req.params.id);
+  /** Runs, findings, patches and evidence are reviewer-only; routes using this also require the reviewer role. */
   async function accessibleRun(req: Request) {
-    const user = currentUser(req);
-    const result = await db.query<{ document: AnalysisRun }>(
-      `SELECT document FROM runs WHERE id=$1 AND ${user.role === 'developer' ? 'owner_id=$2' : reviewable}`,
-      user.role === 'developer' ? [id(req), user.id] : [id(req)],
-    );
+    const result = await db.query<{ document: AnalysisRun }>('SELECT document FROM runs WHERE id=$1', [id(req)]);
     if (!result.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Analysis run not found.');
     return result.rows[0].document;
   }
@@ -122,44 +131,76 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     send(res, JSON.parse(text));
   });
   router.get('/auth/me', (req, res) => send(res, currentUser(req)));
-  router.get('/repositories', requireRole('developer'), async (req, res) =>
-    send(res, await listRepositories(db, currentUser(req))),
-  );
-  router.post('/repositories', requireRole('developer'), async (req, res) =>
+  router.get('/repositories', async (req, res) => {
+    const user = currentUser(req);
+    if (user.role === 'developer') return send(res, await listRepositories(db, user));
+    const all = await db.query<{ document: unknown }>("SELECT document FROM repositories ORDER BY document->>'createdAt' DESC");
+    send(res, all.rows.map((r) => r.document));
+  });
+  // Developers submit a repository; the security scan starts automatically. They never see its results.
+  router.post('/repositories', requireRole('developer'), async (req, res) => {
+    const user = currentUser(req);
+    const repository = await registerRepository(db, user, RepositoryInputSchema.parse(req.body).url);
+    const status = pipeline ? await pipeline.status() : null;
+    const run = await createAnalysisRun(db, user, repository.id, !!status?.available);
+    if (status?.available) pipeline!.start(run);
+    send(res, repository, 201);
+  });
+  /** Developer view: one status per submitted repository. No findings, patches or evidence. */
+  router.get('/submissions', requireRole('developer'), async (req, res) => {
+    const user = currentUser(req);
+    const repos = await listRepositories(db, user);
+    const runs = await db.query<{ document: AnalysisRun }>(
+      "SELECT document FROM runs WHERE owner_id=$1 ORDER BY document->>'createdAt' DESC",
+      [user.id],
+    );
+    const decisions = await db.query<{ run_id: string; status: string }>(
+      "SELECT run_id, document->>'status' AS status FROM patches WHERE owner_id=$1",
+      [user.id],
+    );
     send(
       res,
-      await registerRepository(db, currentUser(req), RepositoryInputSchema.parse(req.body).url),
-      201,
-    ),
-  );
-  router.get('/repositories/:id', requireRole('developer'), async (req, res) => {
+      repos.map((repo) => {
+        const run = runs.rows.map((r) => r.document).find((r) => r.repositoryId === repo.id);
+        const patchStates = decisions.rows.filter((d) => d.run_id === run?.id).map((d) => d.status);
+        return SubmissionSchema.parse({
+          repositoryId: repo.id,
+          url: repo.url,
+          owner: repo.owner,
+          name: repo.name,
+          status: submissionStatus(run, patchStates),
+          submittedAt: repo.createdAt,
+          updatedAt: run?.updatedAt ?? repo.updatedAt,
+        });
+      }),
+    );
+  });
+  router.get('/repositories/:id', async (req, res) => {
+    const user = currentUser(req);
     const result = await db.query<{ document: unknown }>(
-      'SELECT document FROM repositories WHERE id=$1 AND owner_id=$2',
-      [id(req), currentUser(req).id],
+      user.role === 'developer'
+        ? 'SELECT document FROM repositories WHERE id=$1 AND owner_id=$2'
+        : 'SELECT document FROM repositories WHERE id=$1',
+      user.role === 'developer' ? [id(req), user.id] : [id(req)],
     );
     if (!result.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Repository not found.');
     send(res, result.rows[0].document);
   });
-  router.get('/runs', async (req, res) => {
-    const user = currentUser(req);
-    const result = await db.query<{ document: unknown }>(
-      `SELECT document FROM runs WHERE ${user.role === 'developer' ? 'owner_id=$1' : reviewable} ORDER BY document->>'createdAt' DESC`,
-      user.role === 'developer' ? [user.id] : [],
-    );
+  router.get('/runs', requireRole('reviewer'), async (_req, res) => {
+    const result = await db.query<{ document: unknown }>("SELECT document FROM runs ORDER BY document->>'createdAt' DESC");
     send(
       res,
       result.rows.map((r) => r.document),
     );
   });
-  router.post('/runs', requireRole('developer'), async (req, res) => {
+  // Reviewers can (re)scan any submitted repository; the run stays owned by the submitting developer.
+  router.post('/runs', requireRole('reviewer'), async (req, res) => {
     const { repositoryId } = AnalysisInputSchema.parse(req.body);
-    const own = await db.query('SELECT id FROM repositories WHERE id=$1 AND owner_id=$2', [
-      repositoryId,
-      currentUser(req).id,
-    ]);
-    if (!own.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Repository not found.');
+    const repo = await db.query<{ owner_id: string }>('SELECT owner_id FROM repositories WHERE id=$1', [repositoryId]);
+    if (!repo.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Repository not found.');
     const status = pipeline ? await pipeline.status() : null;
-    const run = await createAnalysisRun(db, currentUser(req), repositoryId, !!status?.available);
+    const owner = { ...currentUser(req), id: repo.rows[0].owner_id };
+    const run = await createAnalysisRun(db, owner, repositoryId, !!status?.available);
     if (status?.available) {
       pipeline!.start(run);
       send(res, run, 201);
@@ -178,11 +219,11 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
         },
       });
   });
-  router.post('/runs/:id/cancel', requireRole('developer'), async (req, res) => {
+  router.post('/runs/:id/cancel', requireRole('reviewer'), async (req, res) => {
     const run = await accessibleRun(req);
     send(res, { cancelled: pipeline?.cancel(run.id) ?? false });
   });
-  router.get('/runs/:id/artifacts', async (req, res) => {
+  router.get('/runs/:id/artifacts', requireRole('reviewer'), async (req, res) => {
     const run = await accessibleRun(req);
     const result = await db.query<{ document: unknown }>(
       `SELECT document FROM artifacts WHERE run_id=$1 ORDER BY document->>'createdAt' ASC`,
@@ -193,7 +234,7 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       result.rows.map((r) => r.document),
     );
   });
-  router.get('/runs/:id/artifacts/:artifactId', async (req, res) => {
+  router.get('/runs/:id/artifacts/:artifactId', requireRole('reviewer'), async (req, res) => {
     const run = await accessibleRun(req);
     const artifactId = z.string().regex(/^[0-9a-f]{40}$/).parse(req.params.artifactId);
     const result = await db.query<{ content: string; document: { kind: string } }>(
@@ -207,14 +248,14 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       .setHeader('Content-Disposition', `attachment; filename="${row.document.kind}-${artifactId.slice(0, 12)}.txt"`);
     res.send(row.content);
   });
-  router.get('/runs/:id', async (req, res) => send(res, await accessibleRun(req)));
+  router.get('/runs/:id', requireRole('reviewer'), async (req, res) => send(res, await accessibleRun(req)));
   for (const [path, table] of Object.entries({
     events: 'events',
     findings: 'findings',
     patches: 'patches',
     verification: 'verifications',
   })) {
-    router.get(`/runs/:id/${path}`, async (req, res) => {
+    router.get(`/runs/:id/${path}`, requireRole('reviewer'), async (req, res) => {
       const run = await accessibleRun(req);
       const result = await db.query<{ document: unknown }>(
         `SELECT document FROM ${table} WHERE run_id=$1 ORDER BY document->>'createdAt' ASC`,
@@ -226,13 +267,8 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       );
     });
   }
-  router.get('/overview', async (req, res) => {
-    const user = currentUser(req);
-    const owner = user.role === 'developer' ? 'runs.owner_id=$1' : reviewable;
-    const result = await db.query<{ document: AnalysisRun }>(
-      `SELECT document FROM runs WHERE ${owner}`,
-      user.role === 'developer' ? [user.id] : [],
-    );
+  router.get('/overview', requireRole('reviewer'), async (_req, res) => {
+    const result = await db.query<{ document: AnalysisRun }>('SELECT document FROM runs');
     const runIds = result.rows.map((r) => r.document.id);
     const count = async (table: string) =>
       Number(
@@ -244,7 +280,7 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
         ).rows[0].count,
       );
     send(res, {
-      repositories: user.role === 'developer' ? (await listRepositories(db, user)).length : 0,
+      repositories: Number((await db.query<{ count: number }>('SELECT count(*)::int AS count FROM repositories')).rows[0].count),
       runs: runIds.length,
       findings: await count('findings'),
       patches: await count('patches'),

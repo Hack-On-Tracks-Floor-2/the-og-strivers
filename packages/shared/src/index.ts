@@ -76,6 +76,18 @@ export const RunStatusSchema = z.enum([
   'failed',
   'not_configured',
 ]);
+/** What a developer sees about their submitted repository: a single status, never findings or patches. */
+export const SubmissionStatusSchema = z.enum(['submitted', 'scanning', 'in_review', 'approved', 'rejected', 'scan_failed']);
+export const SubmissionSchema = z.object({
+  repositoryId: Id,
+  url: z.string(),
+  owner: z.string(),
+  name: z.string(),
+  status: SubmissionStatusSchema,
+  submittedAt: Timestamp,
+  updatedAt: Timestamp,
+});
+export type Submission = z.infer<typeof SubmissionSchema>;
 export const AnalysisInputSchema = z.object({ repositoryId: Id }).strict();
 export const AnalysisRunSchema = z.object({
   id: Id,

@@ -18,9 +18,7 @@ export function useWorkspaceIndex() {
   return useResource(async () => {
     const [runs, repositories] = await Promise.all([
       api('/runs', z.array(AnalysisRunSchema)),
-      user?.role === 'developer'
-        ? api('/repositories', z.array(RepositorySchema))
-        : Promise.resolve([]),
+      api('/repositories', z.array(RepositorySchema)),
     ]);
     return { runs, repositories };
   }, [user?.id, user?.role]);

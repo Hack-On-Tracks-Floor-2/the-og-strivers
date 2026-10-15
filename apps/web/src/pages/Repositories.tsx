@@ -1,78 +1,26 @@
-import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import { ArrowUpRight, FolderGit2, ArrowLeft } from 'lucide-react';
-import { RepositorySchema, RepositoryInputSchema, AnalysisRunSchema } from '@proofpatch/shared';
+import { RepositorySchema, AnalysisRunSchema } from '@proofpatch/shared';
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { PageTitle, Eyebrow, EmptyState, ErrorBox, Loading, Status, date } from '../components/ui';
 import { SecurityIntelligence } from '../features/intelligence/SecurityIntelligence';
+/** Reviewer view of every repository developers have submitted. */
 export function RepositoriesPage() {
   const state = useResource(() => api('/repositories', z.array(RepositorySchema)));
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [url, setUrl] = useState('');
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setError('');
-    const parsed = RepositoryInputSchema.safeParse({ url });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
-    setBusy(true);
-    try {
-      await api('/repositories', RepositorySchema, parsed.data);
-      setUrl('');
-      state.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <>
       <PageTitle
-        eyebrow="01 / SOURCE CONTROL"
+        eyebrow="01 / SUBMITTED SOURCE"
         title="REPOSITORIES"
-        description="Give your code a place in the security workflow."
+        description="Every repository developers have submitted for security review."
       />
-      <section className="panel repository-form">
-        <Eyebrow>REGISTER A REPOSITORY</Eyebrow>
-        <h2>Start with your source.</h2>
-        <p>
-          Register a public GitHub repository, then create an analysis job to inspect its source.
-        </p>
-        <form onSubmit={submit}>
-          <label htmlFor="repo-url" className="sr-only">
-            GitHub repository URL
-          </label>
-          <div className="repo-input">
-            <FolderGit2 size={18} />
-            <input
-              id="repo-url"
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repository"
-            />
-          </div>
-          <button className="button primary" disabled={busy}>
-            {busy ? 'Registering…' : 'Add repository'}
-            <ArrowUpRight size={17} />
-          </button>
-        </form>
-        {error && <ErrorBox message={error} />}
-        <span className="field-help mono">HTTPS / GITHUB.COM / PUBLIC REPOSITORIES</span>
-      </section>
       <section className="panel">
         <div className="panel-heading">
           <h2>
-            Your repositories <span className="count">{state.data?.length ?? 0}</span>
+            Submitted repositories <span className="count">{state.data?.length ?? 0}</span>
           </h2>
-          <span className="mono muted">PERSISTED LOCALLY</span>
         </div>
         {state.loading ? (
           <Loading />
@@ -80,24 +28,20 @@ export function RepositoriesPage() {
           <ErrorBox message={state.error} retry={state.reload} />
         ) : !state.data?.length ? (
           <EmptyState
-            title="A clean slate for your code."
-            description="Registered repositories will appear here. Add a GitHub URL above to get started."
+            title="Nothing submitted yet."
+            description="Repositories appear here when a developer submits them. Their scans start automatically."
           />
         ) : (
           <div className="record-list">
             {state.data.map((repo) => (
-              <Link
-                className="record-row"
-                to={`/developer/app/repositories/${repo.id}`}
-                key={repo.id}
-              >
+              <Link className="record-row" to={`/reviewer/app/repositories/${repo.id}`} key={repo.id}>
                 <FolderGit2 size={22} />
                 <div>
                   <strong>
                     {repo.owner} / {repo.name}
                   </strong>
                   <span>
-                    {repo.url} · Added {date(repo.createdAt)}
+                    {repo.url} · Submitted {date(repo.createdAt)}
                   </span>
                 </div>
                 <span className="mono muted">{repo.language ?? 'Language not recorded'}</span>
@@ -124,7 +68,7 @@ export function RepositoryDetailPage() {
   const { repo, runs } = state.data!;
   return (
     <>
-      <Link to="/developer/app/repositories" className="back-link">
+      <Link to="/reviewer/app/repositories" className="back-link">
         <ArrowLeft size={15} /> Repositories
       </Link>
       <PageTitle
@@ -132,8 +76,8 @@ export function RepositoryDetailPage() {
         title={repo.name}
         description={repo.url}
         action={
-          <Link className="button primary" to={`/developer/app/scanner?repository=${repo.id}`}>
-            Create analysis job <ArrowUpRight size={17} />
+          <Link className="button primary" to={`/reviewer/app/scanner?repository=${repo.id}`}>
+            Rescan repository <ArrowUpRight size={17} />
           </Link>
         }
       />
@@ -174,7 +118,7 @@ export function RepositoryDetailPage() {
         </div>
         {runs.length ? (
           runs.map((run) => (
-            <Link className="record-row" key={run.id} to={`/developer/app/scanner?run=${run.id}`}>
+            <Link className="record-row" key={run.id} to={`/reviewer/app/scanner?run=${run.id}`}>
               <div>
                 <strong>{run.id.slice(0, 8)}</strong>
                 <span>{date(run.createdAt)}</span>

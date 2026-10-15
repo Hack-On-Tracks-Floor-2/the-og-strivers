@@ -120,19 +120,28 @@ describe.sequential('real authentication, records and roles', () => {
           .send({ url: 'https://github.com/ExpressJS/Express' })
       ).status,
     ).toBe(409));
-  it('creates honest unavailable jobs and recorded events', async () => {
-    const res = await developer.post('/api/runs').set('Origin', origin).send({ repositoryId });
-    expect(res.status).toBe(201);
-    runId = res.body.data.id;
-    expect(res.body.data.status).toBe('not_configured');
-    expect(res.body.capability.code).toBe('CAPABILITY_UNAVAILABLE');
-    const events = await developer.get(`/api/runs/${runId}/events`);
-    expect(events.body.data.map((e: { kind: string }) => e.kind)).toEqual([
-      'job_received',
-      'capability_unavailable',
-    ]);
-    for (const endpoint of ['findings', 'patches', 'verification'])
-      expect((await developer.get(`/api/runs/${runId}/${endpoint}`)).body.data).toEqual([]);
+  it('starts the scan on submission and hides every result from the developer', async () => {
+    const runs = await db.query<{ document: { id: string; status: string } }>(
+      'SELECT document FROM runs WHERE repository_id=$1',
+      [repositoryId],
+    );
+    expect(runs.rows).toHaveLength(1);
+    runId = runs.rows[0].document.id;
+    expect(runs.rows[0].document.status).toBe('not_configured');
+    const events = await db.query<{ kind: string }>(
+      "SELECT document->>'kind' AS kind FROM events WHERE run_id=$1 ORDER BY document->>'createdAt'",
+      [runId],
+    );
+    expect(events.rows.map((e) => e.kind).sort()).toEqual(['capability_unavailable', 'job_received']);
+    for (const endpoint of ['', '/events', '/findings', '/patches', '/verification', '/artifacts'])
+      expect((await developer.get(`/api/runs/${runId}${endpoint}`)).status).toBe(403);
+    expect((await developer.get('/api/runs')).status).toBe(403);
+    expect((await developer.get('/api/overview')).status).toBe(403);
+    expect((await developer.post('/api/runs').set('Origin', origin).send({ repositoryId })).status).toBe(403);
+    const submissions = (await developer.get('/api/submissions')).body.data;
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]).toMatchObject({ repositoryId, status: 'submitted' });
+    expect(Object.keys(submissions[0]).sort()).toEqual(['name', 'owner', 'repositoryId', 'status', 'submittedAt', 'updatedAt', 'url']);
   });
   it('isolates other developer records, events and job creation', async () => {
     await other
@@ -140,11 +149,12 @@ describe.sequential('real authentication, records and roles', () => {
       .set('Origin', origin)
       .send({ name: 'Other', email: 'other@example.com', password });
     expect((await other.get(`/api/repositories/${repositoryId}`)).status).toBe(404);
-    expect((await other.get(`/api/runs/${runId}/events`)).status).toBe(404);
+    expect((await other.get(`/api/runs/${runId}/events`)).status).toBe(403);
     expect(
       (await other.post('/api/runs').set('Origin', origin).send({ repositoryId })).status,
-    ).toBe(404);
+    ).toBe(403);
     expect((await other.get('/api/repositories')).body.data).toEqual([]);
+    expect((await other.get('/api/submissions')).body.data).toEqual([]);
   });
   it('enforces reviewer portal roles on login and API', async () => {
     expect((await developer.get('/api/reviews/queue')).status).toBe(403);
@@ -164,8 +174,12 @@ describe.sequential('real authentication, records and roles', () => {
           .send({ email: 'reviewer@example.com', password, role: 'reviewer' })
       ).status,
     ).toBe(200);
-    expect((await reviewer.get('/api/repositories')).status).toBe(403);
-    expect((await reviewer.get(`/api/runs/${runId}`)).status).toBe(404);
+    expect((await reviewer.get('/api/repositories')).body.data).toHaveLength(1);
+    expect((await reviewer.get(`/api/runs/${runId}`)).body.data.id).toBe(runId);
+    expect((await reviewer.get('/api/submissions')).status).toBe(403);
+    expect(
+      (await reviewer.post('/api/repositories').set('Origin', origin).send({ url: 'https://github.com/a/b' })).status,
+    ).toBe(403);
     expect((await reviewer.get('/api/reviews/queue')).body.data).toEqual([]);
   });
   it('rejects approval without test evidence and records a real rejection', async () => {
@@ -224,9 +238,10 @@ describe.sequential('real authentication, records and roles', () => {
     expect(rejected.status).toBe(201);
     expect((await reviewer.get('/api/reviews/decisions')).body.data).toHaveLength(1);
     expect((await reviewer.get('/api/reviews/queue')).body.data).toEqual([]);
+    expect((await developer.get('/api/submissions')).body.data[0].status).toBe('rejected');
   });
   it('returns real overview counts', async () => {
-    const res = await developer.get('/api/overview');
+    const res = await reviewer.get('/api/overview');
     expect(res.body.data.repositories).toBe(1);
     expect(res.body.data.runs).toBe(1);
     expect(res.body.data.verified).toBe(0);

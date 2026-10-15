@@ -7,7 +7,7 @@ import { Brand, Eyebrow, ErrorBox, Loading } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 
-const demoAccounts = import.meta.env.DEV
+const demoAccounts = import.meta.env.DEV || __PUBLIC_DEMO__
   ? { reviewer: __REVIEWER_DEMO__, developer: __DEVELOPER_DEMO__ }
   : { reviewer: null, developer: null };
 
@@ -140,7 +140,7 @@ export function AuthPage({
           </h1>
           <p>
             {role === 'developer'
-              ? 'One workspace for your repositories, security findings, patches, and the evidence behind them.'
+              ? 'Submit your repositories for security review and follow their status. Findings and fixes are handled by the security reviewer.'
               : 'A deliberate workspace for independent security review. Every decision starts with evidence.'}
           </p>
           <span className="auth-footnote mono">

@@ -282,21 +282,26 @@ describe.sequential('end-to-end pipeline', () => {
       },
     });
     const app = await createApp(db, { origin, pipeline });
-    const dev = request.agent(app);
-    await dev.post('/api/auth/register').set('Origin', origin).send({ name: 'Dev', email: 'dev@example.com', password });
-    const repo = await dev.post('/api/repositories').set('Origin', origin).send({ url: 'https://github.com/example/vulnapp' });
-    const run = await dev.post('/api/runs').set('Origin', origin).send({ repositoryId: repo.body.data.id });
-    expect(run.status).toBe(201);
-    expect(run.body.data.status).toBe('queued');
+    const developer = request.agent(app);
+    await developer.post('/api/auth/register').set('Origin', origin).send({ name: 'Dev', email: 'dev@example.com', password });
+    // Developer submits; the scan starts automatically. Results are read by the reviewer.
+    const repo = await developer.post('/api/repositories').set('Origin', origin).send({ url: 'https://github.com/example/vulnapp' });
+    expect(repo.status).toBe(201);
     await pipeline.idle();
-    return { app, dev, runId: run.body.data.id as string, sandbox };
+    const dev = request.agent(app);
+    await dev.post('/api/auth/login').set('Origin', origin).send({ email: 'reviewer@example.com', password, role: 'reviewer' });
+    const [run] = (await dev.get('/api/runs')).body.data;
+    expect(run.repositoryId).toBe(repo.body.data.id);
+    expect((await developer.get(`/api/runs/${run.id}/patches`)).status).toBe(403);
+    return { app, dev, developer, runId: run.id as string, sandbox };
   }
 
   it('finds the bug, reproduces it, patches it, proves it, and lets a reviewer approve', async () => {
     const ai = fakeAi([[VULN_LINE, SAFE_LINE]]);
-    const { app, dev, runId, sandbox } = await setup(ai);
+    const { app, dev, developer, runId, sandbox } = await setup(ai);
     const run = (await dev.get(`/api/runs/${runId}`)).body.data;
     expect(run.status).toBe('needs_review');
+    expect((await developer.get('/api/submissions')).body.data[0].status).toBe('in_review');
     const findings = (await dev.get(`/api/runs/${runId}/findings`)).body.data;
     expect(findings[0]).toMatchObject({ cwe: 'CWE-89', source: 'scanner+ai', file: 'vulnapp/store.py' });
     const [patch] = (await dev.get(`/api/runs/${runId}/patches`)).body.data;
