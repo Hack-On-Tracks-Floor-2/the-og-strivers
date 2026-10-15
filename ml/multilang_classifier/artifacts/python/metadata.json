@@ -1,0 +1,21 @@
+{
+  "supported_cwes": [
+    "CWE-22",
+    "CWE-328",
+    "CWE-330",
+    "CWE-643",
+    "CWE-79"
+  ],
+  "negative_label": "BENCHMARK_NEGATIVE",
+  "language": "python",
+  "rejection_threshold": 0.35,
+  "dataset_commit": "f1291485808b66e20ddb6b01b10dc71b3df8c8ba",
+  "enabled": true,
+  "activation_reason": "Passed the predeclared benchmark activation gate; remains experimental.",
+  "activation_gate": {
+    "minimum_macro_f1": 0.65,
+    "maximum_negative_false_positive_rate": 0.3
+  },
+  "experimental": true,
+  "model_version": "owasp-python-0.1-b20e1accbd58"
+}

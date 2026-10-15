@@ -4,6 +4,7 @@ export const ClassifyInputSchema = z
   .object({
     code: z.string().min(1).max(20000),
     language: z.string().trim().min(1).max(30).default('java'),
+    filePath: z.string().trim().min(1).max(500).refine((value) => !value.includes('\0'), 'Invalid source path.').optional(),
   })
   .strict();
 export const MLExampleSchema = z.object({
@@ -23,13 +24,16 @@ export const MLPredictionSchema = z.object({
   reason: z.string().optional(),
   note: z.string().optional(),
   modelVersion: z.string(),
+  filePath: z.string().optional(),
+  probabilityKind: z.literal('uncalibrated').optional(),
+  confirmed: z.literal(false).optional(),
 });
 export const MLModelInfoSchema = z.object({
   availability: z.enum(['available', 'unavailable']),
   reason: z.string().optional(),
   modelVersion: z.string(),
   model: z.string(),
-  language: z.literal('java'),
+  language: z.enum(['java', 'python', 'javascript', 'typescript']),
   supportedCwes: z.array(z.string()),
   trainedAt: z.string(),
   dataset: z.object({
@@ -48,10 +52,21 @@ export const MLModelInfoSchema = z.object({
     recallMacro: z.number(),
     f1Macro: z.number(),
     negativeRecall: z.number(),
+    negativeFalsePositiveRate: z.number().optional(),
   }),
   rejectionThreshold: z.number(),
   limitations: z.array(z.string()),
+  activation: z.object({ enabled: z.boolean(), reason: z.string() }).optional(),
 });
+export const MLModelCatalogSchema = z.object({
+  models: z.array(z.object({
+    language: z.enum(['java', 'python', 'javascript', 'typescript']),
+    status: z.enum(['available', 'unavailable', 'unsupported', 'disabled']),
+    reason: z.string().optional(),
+    info: MLModelInfoSchema.optional(),
+  })),
+});
+export type MLModelCatalog = z.infer<typeof MLModelCatalogSchema>;
 const SuiteSummary = z.object({
   total: z.number(),
   passed: z.number(),
