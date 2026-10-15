@@ -2,7 +2,7 @@
 export const OWASP_TOP_10 = [
   { id: 'A01', name: 'Broken Access Control', cwes: ['CWE-22', 'CWE-23', 'CWE-35', 'CWE-59', 'CWE-200', 'CWE-284', 'CWE-285', 'CWE-352', 'CWE-377', 'CWE-601', 'CWE-639', 'CWE-942'] },
   { id: 'A02', name: 'Cryptographic Failures', cwes: ['CWE-259', 'CWE-261', 'CWE-295', 'CWE-319', 'CWE-326', 'CWE-327', 'CWE-328', 'CWE-330', 'CWE-338', 'CWE-916'] },
-  { id: 'A03', name: 'Injection', cwes: ['CWE-20', 'CWE-74', 'CWE-77', 'CWE-78', 'CWE-79', 'CWE-89', 'CWE-90', 'CWE-94', 'CWE-95', 'CWE-643', 'CWE-943', 'CWE-1336'] },
+  { id: 'A03', name: 'Injection', cwes: ['CWE-20', 'CWE-74', 'CWE-77', 'CWE-78', 'CWE-79', 'CWE-89', 'CWE-90', 'CWE-94', 'CWE-95', 'CWE-98', 'CWE-643', 'CWE-943', 'CWE-1336'] },
   { id: 'A04', name: 'Insecure Design', cwes: ['CWE-209', 'CWE-256', 'CWE-501', 'CWE-522', 'CWE-915', 'CWE-1321'] },
   { id: 'A05', name: 'Security Misconfiguration', cwes: ['CWE-16', 'CWE-489', 'CWE-611', 'CWE-614', 'CWE-1004', 'CWE-1333'] },
   { id: 'A06', name: 'Vulnerable and Outdated Components', cwes: ['CWE-1035', 'CWE-1104'] },

@@ -64,7 +64,8 @@ export async function jsFunctionSpans(root: string, wanted: Map<string, number[]
   for (const [file, lines] of wanted) {
     const text = await readFile(join(root, file), 'utf8').catch(() => null);
     if (text === null) continue;
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const kind = /\.tsx$/.test(file) ? ts.ScriptKind.TSX : /\.[cm]?ts$/.test(file) ? ts.ScriptKind.TS : /\.jsx$/.test(file) ? ts.ScriptKind.JSX : ts.ScriptKind.JS;
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
     const spans: [number, number][] = [];
     const visit = (node: ts.Node) => {
       if (

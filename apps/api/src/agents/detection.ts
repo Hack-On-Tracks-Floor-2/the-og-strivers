@@ -60,7 +60,7 @@ export async function detectVulnerabilities(input: {
   signal: AbortSignal;
   external?: ExternalHit[];
   locator?: Locator | null;
-  language?: 'python' | 'javascript';
+  language?: import('./toolchain.js').Language;
   onUsage?: (usage: AiUsage, note: string) => void | Promise<void>;
 }): Promise<{ issues: DetectedIssue[]; candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
   const search = await findCandidates(input.root, { external: input.external, locator: input.locator, language: input.language });

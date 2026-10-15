@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { openDatabase, type Database } from '../../apps/api/src/database/index.js';
 import { createApp } from '../../apps/api/src/app.js';
@@ -19,7 +19,7 @@ import { applyEdits, unifiedDiff, changedLineCount, EditError } from '../../apps
 import { parseJUnit, compareSuites } from '../../apps/api/src/verification/junit.js';
 import { DockerSandbox, hardeningArgs } from '../../apps/api/src/verification/docker.js';
 import { inspectRepository } from '../../apps/api/src/agents/intelligence.js';
-import { detectToolchain } from '../../apps/api/src/agents/toolchain.js';
+import { detectToolchain, type Language } from '../../apps/api/src/agents/toolchain.js';
 import { randomUUID } from 'node:crypto';
 
 const FIXTURE = join(__dirname, 'fixtures', 'vulnapp');
@@ -108,6 +108,49 @@ describe('JavaScript support', () => {
     expect(candidates[0].snippet).toContain('function greet(name)');
     expect(candidates[0].snippet).toContain('execSync(`echo Hello ${name}`)');
     expect(candidates[0].snippet).not.toContain('function shout');
+  });
+});
+
+describe('more languages: detection and toolchains', () => {
+  // [language, file, source, vulnerable line text, CWE, other function that must not be in the snippet]
+  const cases: [string, string, string, string, string, string][] = [
+    ['go', 'store/store.go', 'package store\n\nimport (\n\t"database/sql"\n\t"fmt"\n)\n\nfunc Find(db *sql.DB, name string) (*sql.Rows, error) {\n\treturn db.Query(fmt.Sprintf("SELECT id FROM users WHERE name = \'%s\'", name))\n}\n\nfunc Hello() string {\n\treturn "hi"\n}\n', 'db.Query(fmt.Sprintf', 'CWE-89', 'func Hello'],
+    ['java', 'src/main/java/app/Files.java', 'package app;\n\nimport java.nio.file.*;\n\npublic class Files2 {\n    public String read(String name) throws Exception {\n        return new String(java.nio.file.Files.readAllBytes(Paths.get("/data", name)));\n    }\n\n    public int add(int a, int b) {\n        return a + b;\n    }\n}\n', 'Paths.get("/data", name)', 'CWE-22', 'public int add'],
+    ['csharp', 'Api/Users.cs', 'using System.Data.SqlClient;\n\npublic class Users\n{\n    public void Find(SqlConnection c, string name)\n    {\n        var cmd = new SqlCommand("SELECT * FROM users WHERE name = \'" + name + "\'", c);\n    }\n\n    public int Count() { return 0; }\n}\n', 'new SqlCommand(', 'CWE-89', 'public int Count'],
+    ['php', 'src/Report.php', '<?php\nfunction showReport($name) {\n    return file_get_contents("/reports/" . $name);\n}\n\nfunction title() {\n    return "Reports";\n}\n', 'file_get_contents("/reports/"', 'CWE-22', 'function title'],
+    ['ruby', 'app/models/user.rb', 'class User\n  def self.search(name)\n    where("name = \'#{name}\'")\n  end\n\n  def greeting\n    "hi"\n  end\nend\n', 'where("name', 'CWE-89', 'def greeting'],
+    ['rust', 'src/main.rs', 'use std::process::Command;\n\nfn run(cmd: &str) {\n    Command::new("sh").arg("-c").arg(cmd).output().unwrap();\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n', 'Command::new("sh")', 'CWE-78', 'fn add'],
+    ['typescript', 'src/user.ts', 'import { execSync } from "node:child_process";\n\nexport function archive(name: string): string {\n  return execSync(`tar czf ${name}.tgz data`).toString();\n}\n\nexport function size(n: number): string {\n  return `${n} B`;\n}\n', 'execSync(`tar', 'CWE-78', 'function size'],
+    ['c', 'src/main.c', '#include <string.h>\n\nvoid copy(char *dst, const char *src)\n{\n    strcpy(dst, src);\n}\n\nint add(int a, int b)\n{\n    return a + b;\n}\n', 'strcpy(dst, src)', 'CWE-120', 'int add'],
+  ];
+  it.each(cases)('%s: finds the planted bug and cuts out only its function', async (language, file, source, line, cwe, other) => {
+    const dir = await mkdtemp(join(tmpdir(), `pp-${language}-`));
+    await mkdir(join(dir, dirname(file)), { recursive: true });
+    await writeFile(join(dir, file), source);
+    const { candidates } = await findCandidates(dir, { language: language as Language });
+    const hit = candidates.find((c) => c.cwe === cwe);
+    expect(hit, JSON.stringify(candidates.map((c) => [c.cwe, c.rule]))).toBeTruthy();
+    expect(hit!.snippet).toContain(line);
+    expect(hit!.snippet).not.toContain(other);
+    await rm(dir, { recursive: true, force: true });
+  });
+  it('picks proven toolchains for Go, PHP and TypeScript and detection-only for the rest', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pp-tc2-'));
+    const map = (languages: string[]) => ({ languages, frameworks: [], entryPoints: [], testCommands: [], hasNodeTests: true });
+    await writeFile(join(dir, 'go.mod'), 'module example.com/app\n\ngo 1.22\n');
+    const go = await detectToolchain(dir, map(['Go']));
+    expect(go).toMatchObject({ language: 'go', runtime: 'go', framework: 'go test' });
+    if (!('only' in go)) throw new Error('go');
+    expect(go.securityTestPath('store/store.go', 'x')).toBe('store/proofpatch_security_test.go');
+    expect(go.only('store/proofpatch_security_test.go').slice(-3)).toEqual(['-run', '^TestProofPatch', './store']);
+    await writeFile(join(dir, 'composer.json'), JSON.stringify({ 'require-dev': { 'phpunit/phpunit': '^11' } }));
+    expect(await detectToolchain(dir, map(['PHP']))).toMatchObject({ language: 'php', runtime: 'php', framework: 'phpunit' });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { vitest: '^2' } }));
+    expect(await detectToolchain(dir, map(['TypeScript']))).toMatchObject({ language: 'typescript', runtime: 'node', framework: 'vitest' });
+    for (const lang of ['Java', 'Kotlin', 'C#', 'Ruby', 'Rust', 'C', 'C++'])
+      expect(await detectToolchain(dir, map([lang]))).toMatchObject({ detectOnly: true });
+    expect(await detectToolchain(dir, map(['Haskell']))).toHaveProperty('unsupported');
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

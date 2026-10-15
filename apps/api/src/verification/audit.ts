@@ -10,7 +10,7 @@ export interface Advisory {
   fix: string | null;
 }
 
-export function parseAudit(language: 'python' | 'javascript', text: string | undefined): Advisory[] | null {
+export function parseAudit(runtime: string, text: string | undefined): Advisory[] | null {
   if (!text?.trim()) return null;
   let json: unknown;
   try {
@@ -18,7 +18,18 @@ export function parseAudit(language: 'python' | 'javascript', text: string | und
   } catch {
     return null;
   }
-  if (language === 'javascript') {
+  if (runtime === 'php') {
+    // composer audit --format=json: { advisories: { "vendor/pkg": [{ advisoryId, cve, title, affectedVersions }] } }
+    const advisories = (json as { advisories?: Record<string, { advisoryId?: string; cve?: string | null; affectedVersions?: string }[]> }).advisories ?? {};
+    return Object.entries(Array.isArray(advisories) ? {} : advisories).map(([name, list]) => ({
+      name,
+      version: list[0]?.affectedVersions ?? '',
+      severity: 'known CVE',
+      ids: list.flatMap((v) => [v.cve, v.advisoryId].filter((x): x is string => !!x)).slice(0, 5),
+      fix: 'composer update',
+    }));
+  }
+  if (runtime === 'node' || runtime === 'javascript') {
     // npm 7+: { vulnerabilities: { name: { severity, range, via: [..], fixAvailable } } }
     const vulns = (json as { vulnerabilities?: Record<string, { severity?: string; range?: string; via?: unknown[]; fixAvailable?: unknown }> }).vulnerabilities ?? {};
     return Object.entries(vulns).map(([name, v]) => ({
@@ -32,6 +43,7 @@ export function parseAudit(language: 'python' | 'javascript', text: string | und
       fix: v.fixAvailable ? (typeof v.fixAvailable === 'object' ? `upgrade to ${(v.fixAvailable as { version?: string }).version ?? 'a fixed version'}` : 'npm audit fix') : null,
     }));
   }
+  if (runtime !== 'python') return null;
   // pip-audit -f json: { dependencies: [{ name, version, vulns: [{ id, fix_versions, aliases }] }] } (older: a bare list)
   const deps = Array.isArray(json) ? json : ((json as { dependencies?: unknown[] }).dependencies ?? []);
   return (deps as { name: string; version: string; vulns?: { id: string; fix_versions?: string[]; aliases?: string[] }[] }[])

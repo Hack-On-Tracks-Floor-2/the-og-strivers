@@ -5,6 +5,41 @@ import { join } from 'node:path';
 import { listSourceFiles } from '../agents/intelligence.js';
 import type { Locator } from './locator.js';
 import { JS_ROUTE, JS_SINKS, JS_USER_INPUT, jsFunctionSpans } from './javascript.js';
+import { C_SINKS, CSHARP_SINKS, GO_SINKS, JAVA_SINKS, KOTLIN_SINKS, PHP_SINKS, ROUTE, RUBY_SINKS, RUST_SINKS, USER_INPUT as INPUT_BY_LANGUAGE } from './languages.js';
+import { textFunctionSpans } from './spans.js';
+import type { Language } from '../agents/toolchain.js';
+
+/** What the funnel needs per language: files, rules, user-input/route hints, comment syntax. */
+interface LanguageProfile {
+  files: RegExp;
+  sinks: SinkRule[];
+  input: RegExp;
+  route: RegExp;
+  comment: RegExp;
+  spans: 'python' | 'typescript' | 'text';
+}
+const C_COMMENT = /^\s*(\/\/|\*|\/\*)/;
+export function languageProfile(language: Language = 'python'): LanguageProfile {
+  const text = (files: RegExp, sinks: SinkRule[], key: string, comment = C_COMMENT): LanguageProfile =>
+    ({ files, sinks, input: INPUT_BY_LANGUAGE[key], route: ROUTE[key], comment, spans: 'text' });
+  switch (language) {
+    case 'javascript':
+      return { files: /\.[cm]?jsx?$/, sinks: JS_SINKS, input: JS_USER_INPUT, route: JS_ROUTE, comment: C_COMMENT, spans: 'typescript' };
+    case 'typescript':
+      return { files: /\.([cm]?ts|tsx|[cm]?jsx?)$/, sinks: JS_SINKS, input: JS_USER_INPUT, route: JS_ROUTE, comment: C_COMMENT, spans: 'typescript' };
+    case 'go': return text(/\.go$/, GO_SINKS, 'go');
+    case 'java': return text(/\.java$/, JAVA_SINKS, 'java');
+    case 'kotlin': return text(/\.kts?$/, KOTLIN_SINKS, 'kotlin');
+    case 'csharp': return text(/\.cs$/, CSHARP_SINKS, 'csharp');
+    case 'php': return text(/\.php$/, PHP_SINKS, 'php', /^\s*(\/\/|#|\*|\/\*)/);
+    case 'ruby': return text(/\.rb$/, RUBY_SINKS, 'ruby', /^\s*#/);
+    case 'rust': return text(/\.rs$/, RUST_SINKS, 'rust');
+    case 'c':
+    case 'cpp': return text(/\.(c|h|cc|cpp|cxx|hh|hpp|hxx)$/, C_SINKS, 'c');
+    default:
+      return { files: /\.py$/, sinks: PYTHON_SINKS, input: USER_INPUT, route: /@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/, comment: /^\s*#/, spans: 'python' };
+  }
+}
 
 /**
  * Token-efficient code search. Steps 1–2 of the funnel run locally with zero AI tokens:
@@ -247,14 +282,15 @@ export async function findCandidates(
     maxSnippetLines?: number;
     external?: ExternalHit[];
     locator?: Locator | null;
-    language?: 'python' | 'javascript';
+    language?: Language;
   } = {},
 ): Promise<{ candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
   const maxCandidates = options.maxCandidates ?? 6;
   const maxSnippetLines = options.maxSnippetLines ?? 45;
-  const js = options.language === 'javascript';
-  const sinks = js ? JS_SINKS : PYTHON_SINKS;
-  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && (js ? /\.[cm]?js$/.test(f.path) : f.path.endsWith('.py')));
+  const lang = options.language ?? 'python';
+  const profile = languageProfile(lang);
+  const sinks = profile.sinks;
+  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && profile.files.test(f.path));
   const contents = new Map<string, string[]>();
   type Hit = Omit<Candidate, 'id' | 'startLine' | 'endLine' | 'snippet' | 'source'> & { external: boolean };
   const hits: Hit[] = [];
@@ -262,7 +298,7 @@ export async function findCandidates(
     const lines = (await readFile(join(root, file.path), 'utf8')).split(/\r?\n/);
     contents.set(file.path, lines);
     lines.forEach((text, i) => {
-      if (js ? /^\s*(\/\/|\*|\/\*)/.test(text) : /^\s*#/.test(text)) return;
+      if (profile.comment.test(text)) return;
       for (const rule of sinks)
         if (rule.pattern.test(text))
           hits.push({ file: file.path, line: i + 1, cwe: rule.cwe, category: rule.category, rule: rule.id,
@@ -278,7 +314,7 @@ export async function findCandidates(
   // Trained model: scores every function, so it can rank regex hits and surface code the rules miss.
   let modelFns: ModelFunction[] = [];
   let model: ModelSummary | undefined;
-  if (options.locator && !js) {
+  if (options.locator && profile.spans === 'python') {
     try {
       const r = await scoreFunctions(root, files.map((f) => f.path), contents, options.locator);
       modelFns = r.scored;
@@ -300,7 +336,10 @@ export async function findCandidates(
   // Function spans for every hit, in one python process.
   const wanted = new Map<string, number[]>();
   for (const h of hits) wanted.set(h.file, [...(wanted.get(h.file) ?? []), h.line]);
-  const spans = js ? await jsFunctionSpans(root, wanted) : await functionSpans(root, wanted);
+  const spans =
+    profile.spans === 'python' ? await functionSpans(root, wanted)
+    : profile.spans === 'typescript' ? await jsFunctionSpans(root, wanted)
+    : await textFunctionSpans(root, wanted, lang);
 
   const scored = hits.map((h) => {
     const lines = contents.get(h.file)!;
@@ -308,8 +347,8 @@ export async function findCandidates(
     let [start, end] = span ?? [Math.max(1, h.line - 8), Math.min(lines.length, h.line + 8)];
     const body = lines.slice(start - 1, end).join('\n');
     let score = h.score;
-    if ((js ? JS_USER_INPUT : USER_INPUT).test(body)) score += 4; // user input reaches the same function
-    if (js ? JS_ROUTE.test(body) : /@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/.test(body)) score += 2;
+    if (profile.input.test(body)) score += 4; // user input reaches the same function
+    if (profile.route.test(body)) score += 2;
     const m = modelFor(h.file, h.line);
     if (m) score += Math.round(m.score * 10); // trained model agrees this function is risky
     if (end - start + 1 > maxSnippetLines) {

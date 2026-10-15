@@ -5,11 +5,14 @@ import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import type { ExecutionRequest, ExecutionResult, SandboxExecutionAdapter } from './sandbox.js';
+import type { Runtime } from '../agents/toolchain.js';
 
 export interface DockerOptions {
   image: string;
-  /** Runner image for JavaScript repositories (node:test / Jest / Mocha). */
+  /** Runner images for the other runtimes (defaults: proofpatch-runner:node22 / go122 / php83). */
   nodeImage?: string;
+  goImage?: string;
+  phpImage?: string;
   workspacePath: (id: string) => string;
   scratchRoot: string; // per-execution output folders and dependency folders
   docker?: string;
@@ -98,8 +101,13 @@ export class DockerSandbox implements SandboxExecutionAdapter {
     });
   }
 
-  private imageFor(language: 'python' | 'javascript' = 'python') {
-    return language === 'javascript' ? (this.options.nodeImage ?? 'proofpatch-runner:node22') : this.options.image;
+  private imageFor(runtime: Runtime = 'python') {
+    return {
+      python: this.options.image,
+      node: this.options.nodeImage ?? 'proofpatch-runner:node22',
+      go: this.options.goImage ?? 'proofpatch-runner:go122',
+      php: this.options.phpImage ?? 'proofpatch-runner:php83',
+    }[runtime];
   }
 
   depsPath(workspaceId: string) {
@@ -111,7 +119,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
    * dependency folder. This is the ONLY stage with network access; it still runs as a
    * non-root user with no capabilities and resource limits. Tests later mount it read-only.
    */
-  async prepare(workspace: WorkspaceHandle, signal: AbortSignal, language: 'python' | 'javascript' = 'python') {
+  async prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime: Runtime = 'python') {
     const deps = this.depsPath(workspace.id);
     await mkdir(deps, { recursive: true });
     await chmod(deps, 0o777); // container runs as uid 10001
@@ -126,6 +134,23 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       'if grep -q \'"jest"\' package.json; then npm install --no-save --ignore-scripts --no-audit --no-fund --loglevel=error jest-junit; fi',
       // OWASP A06: known-vulnerable runtime dependencies (best effort; never fails the stage).
       'timeout 90 npm audit --json --omit=dev > /deps/audit.json 2>/dev/null || true',
+      'echo prepared',
+    ].join('\n');
+    // Go modules land in /deps/gomod (GOMODCACHE in the image); tests later run with GOPROXY=off.
+    const goScript = [
+      'set -e',
+      'GOPROXY=https://proxy.golang.org,direct go mod download',
+      'echo prepared',
+    ].join('\n');
+    // Composer with scripts and plugins disabled; the autoloader is regenerated per test run.
+    const phpScript = [
+      'set -e',
+      'cp composer.json /deps/composer.json',
+      'if [ -f composer.lock ]; then cp composer.lock /deps/; fi',
+      'cd /deps',
+      'composer install --no-scripts --no-plugins --no-interaction --prefer-dist --no-progress --no-autoloader -q',
+      // OWASP A06: known-vulnerable packages (best effort; never fails the stage).
+      'timeout 90 composer audit --format=json --no-interaction > /deps/audit.json 2>/dev/null || true',
       'echo prepared',
     ].join('\n');
     const pythonScript = [
@@ -146,7 +171,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         ...hardeningArgs(1536, 2),
         ...bind(this.options.workspacePath(workspace.id), '/src', true),
         ...bind(deps, '/deps', false),
-        this.imageFor(language), 'sh', '-c', language === 'javascript' ? nodeScript : pythonScript,
+        this.imageFor(runtime), 'sh', '-c', { python: pythonScript, node: nodeScript, go: goScript, php: phpScript }[runtime],
       ],
       300_000,
       200_000,

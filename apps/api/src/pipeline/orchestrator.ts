@@ -21,7 +21,7 @@ import type { RepositoryIngestionService } from '../repositories/ingestion.js';
 import type { WorkspaceStore } from '../repositories/clone.js';
 import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
-import { detectToolchain, type Language, type Toolchain } from '../agents/toolchain.js';
+import { detectToolchain, type Runtime, type Toolchain } from '../agents/toolchain.js';
 import { auditSummary, parseAudit } from '../verification/audit.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
@@ -40,7 +40,7 @@ import type { Locator } from '../scanners/locator.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
-  prepare(workspace: WorkspaceHandle, signal: AbortSignal, language?: Language): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
+  prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime?: Runtime): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
   executeWith(request: ExecutionRequest, depsId: string, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>>;
   cleanup(workspaceId: string): Promise<void>;
 }
@@ -126,10 +126,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     return { ...from, id };
   }
 
-  const languageOf = new Map<string, Language>();
+  // The runtime follows the dependency folder: whatever was prepared for a workspace decides its image.
+  const languageOf = new Map<string, Runtime>();
   async function prepareDeps(workspace: WorkspaceHandle, tc: Toolchain, signal: AbortSignal) {
-    languageOf.set(workspace.id, tc.language);
-    return sandbox.prepare(workspace, signal, tc.language);
+    languageOf.set(workspace.id, tc.runtime);
+    return sandbox.prepare(workspace, signal, tc.runtime);
   }
   async function toolchainFor(root: string) {
     const map = await inspectRepository(root);
@@ -271,7 +272,19 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await event(run, 'stage_completed', `Cloned at commit ${original.commitSha}.`);
 
       // 2. Map the repository without executing it.
-      const { map, tc } = await toolchainFor(store.path(original.id));
+      const { map, tc: chain } = await toolchainFor(store.path(original.id));
+      if ('detectOnly' in chain) {
+        await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${chain.label}.`);
+        await setRun(run, { status: 'analyzing' });
+        const found = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, language: chain.language, onUsage });
+        await event(run, 'stage_completed', `Search funnel: ${found.filesScanned} source files → ${found.hits} scanner hits → ${found.candidates.length} snippets sent to AI → ${found.issues.length} confirmed.`);
+        if (!found.issues.length) throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');
+        for (const issue of found.issues.slice(0, 6)) await saveFinding(run, issue);
+        await setRun(run, { status: 'needs_review', error: null });
+        await event(run, 'stage_completed', `${Math.min(found.issues.length, 6)} AI-confirmed finding(s) recorded for review. ${chain.reason}`);
+        return;
+      }
+      const tc = chain;
       const testArgv = tc.suite;
       await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${tc.label} · test command ${JSON.stringify(testArgv)}.`);
 
@@ -281,7 +294,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       if (prepared.exitCode !== 0)
         throw new StageFailure(`Dependency installation failed (exit ${prepared.exitCode}${prepared.timedOut ? ', timed out' : ''}): ${tail(prepared.stderr, 600)}`);
       await event(run, 'stage_completed', 'Dependencies installed. All further execution runs with network disabled.');
-      const advisories = parseAudit(tc.language, prepared.audit);
+      const advisories = parseAudit(tc.runtime, prepared.audit);
       if (advisories) {
         const summary = auditSummary(advisories);
         await event(run, 'stage_completed', summary, await artifact(run, 'report', `${summary}\n\n${JSON.stringify(advisories, null, 2)}`));
@@ -298,7 +311,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       // 5. Local scanner (Bandit, in the sandbox) + sink search + one AI confirmation call.
       let external: ExternalHit[] = [];
       try {
-        if (tc.language !== 'python') throw new Error('Bandit is Python-only.');
+        if (tc.runtime !== 'python') throw new Error('Bandit is Python-only.');
         const scan = await execute(original, original.id, ['bandit', '-r', '.', '-f', 'json', '-o', '/out/bandit.json', '-q', '-x', './tests,./test'], signal);
         const report = JSON.parse(scan.files['bandit.json'] ?? '{"results":[]}') as {
           results: { filename: string; line_number: number; test_id: string; issue_text: string; issue_cwe?: { id?: number } }[];
@@ -560,6 +573,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       workspaces.push(latest.id);
       await rm(join(store.path(latest.id), '.git'), { recursive: true, force: true });
       const { tc } = await toolchainFor(store.path(latest.id));
+      if ('detectOnly' in tc) throw new StageFailure(`${tc.label}: fixes cannot be re-proven automatically, so they cannot be merged.`);
       const testArgv = tc.suite;
       const prepared = await prepareDeps(latest, tc, signal);
       if (prepared.exitCode !== 0) throw new StageFailure(`Dependency installation failed on the latest code (exit ${prepared.exitCode}).`);

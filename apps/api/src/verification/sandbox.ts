@@ -9,7 +9,7 @@ export interface ExecutionRequest {
   readOnlyRoot: true;
   maxOutputBytes: number;
   /** Selects the runner image (defaults to Python). */
-  language?: 'python' | 'javascript';
+  language?: import('../agents/toolchain.js').Runtime;
 }
 export interface ExecutionResult {
   exitCode: number;

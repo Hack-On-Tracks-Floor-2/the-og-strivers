@@ -7,10 +7,13 @@ export const IGNORED_DIRS = new Set([
   '.git', 'node_modules', 'vendor', 'third_party', 'dist', 'build', '.venv', 'venv', 'env',
   '__pycache__', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'docs', 'doc',
   'examples', 'migrations', '.github', 'coverage', 'htmlcov', 'static', 'assets',
+  'target', 'bin', 'obj', '.gradle', '.idea', '.vs', 'Pods',
 ]);
 const LANGUAGES: Record<string, string> = {
-  '.py': 'Python', '.js': 'JavaScript', '.cjs': 'JavaScript', '.mjs': 'JavaScript', '.ts': 'TypeScript', '.go': 'Go', '.java': 'Java',
-  '.rb': 'Ruby', '.php': 'PHP', '.rs': 'Rust', '.c': 'C', '.cpp': 'C++',
+  '.py': 'Python', '.js': 'JavaScript', '.cjs': 'JavaScript', '.mjs': 'JavaScript', '.jsx': 'JavaScript',
+  '.ts': 'TypeScript', '.tsx': 'TypeScript', '.mts': 'TypeScript', '.cts': 'TypeScript', '.go': 'Go', '.java': 'Java',
+  '.kt': 'Kotlin', '.kts': 'Kotlin', '.cs': 'C#', '.rb': 'Ruby', '.php': 'PHP', '.rs': 'Rust', '.c': 'C', '.h': 'C',
+  '.cpp': 'C++', '.cc': 'C++', '.cxx': 'C++', '.hpp': 'C++', '.hh': 'C++',
 };
 const FRAMEWORKS: [RegExp, string][] = [
   [/\bflask\b/i, 'Flask'], [/\bdjango\b/i, 'Django'], [/\bfastapi\b/i, 'FastAPI'],
@@ -26,7 +29,11 @@ export const isTestPath = (p: string) =>
   /(^|\/)(tests?|testing|__tests__|spec)\//.test(p) ||
   /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(p) ||
   /conftest\.py$/.test(p) ||
-  /\.(test|spec)\.[cm]?js$/.test(p);
+  /\.(test|spec)\.([cm]?[jt]sx?)$/.test(p) ||
+  /_test\.go$/.test(p) || // Go
+  /(^|\/)src\/test\//.test(p) || // Java / Kotlin (Maven/Gradle)
+  /(^|\/)[^/]*Tests?(\/|\.(cs|php|java|kt)$)/.test(p) || // C#, PHPUnit, JUnit naming
+  /_(spec|test)\.rb$/.test(p); // Ruby
 
 /** Lists source files, skipping vendored/generated folders and anything over 200 KB. */
 export async function listSourceFiles(root: string): Promise<SourceFile[]> {
@@ -80,7 +87,7 @@ export async function inspectRepository(root: string): Promise<RepositoryMap> {
   const hasPyTests = files.some((f) => f.isTest && f.path.endsWith('.py'));
   if (languages[0] === 'Python' && hasPyTests)
     testCommands.push(['python', '-m', 'pytest', '-q', '-p', 'no:cacheprovider']);
-  const hasNodeTests = files.some((f) => f.isTest && /\.[cm]?js$/.test(f.path));
+  const hasNodeTests = files.some((f) => f.isTest && /\.[cm]?[jt]sx?$/.test(f.path));
   return { languages, frameworks, entryPoints, testCommands, hasNodeTests };
 }
 
