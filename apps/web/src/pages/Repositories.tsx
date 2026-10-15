@@ -6,6 +6,7 @@ import { RepositorySchema, RepositoryInputSchema, AnalysisRunSchema } from '@pro
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { PageTitle, Eyebrow, EmptyState, ErrorBox, Loading, Status, date } from '../components/ui';
+import { SecurityIntelligence } from '../features/intelligence/SecurityIntelligence';
 export function RepositoriesPage() {
   const state = useResource(() => api('/repositories', z.array(RepositorySchema)));
   const [error, setError] = useState('');
@@ -41,8 +42,7 @@ export function RepositoriesPage() {
         <Eyebrow>REGISTER A REPOSITORY</Eyebrow>
         <h2>Start with your source.</h2>
         <p>
-          Add a public GitHub repository. Registration saves its URL; source inspection begins when
-          the agent is connected.
+          Register a public GitHub repository, then create an analysis job to inspect its source.
         </p>
         <form onSubmit={submit}>
           <label htmlFor="repo-url" className="sr-only">
@@ -100,7 +100,7 @@ export function RepositoriesPage() {
                     {repo.url} · Added {date(repo.createdAt)}
                   </span>
                 </div>
-                <span className="mono muted">LANGUAGE UNKNOWN</span>
+                <span className="mono muted">{repo.language ?? 'Language not recorded'}</span>
                 <ArrowUpRight size={18} />
               </Link>
             ))}
@@ -137,6 +137,12 @@ export function RepositoryDetailPage() {
           </Link>
         }
       />
+      <SecurityIntelligence
+        runs={runs}
+        repositories={[repo]}
+        repositoryId={repo.id}
+        onRefresh={state.reload}
+      />
       <div className="detail-grid">
         <div className="panel details">
           <Eyebrow>REPOSITORY DETAILS</Eyebrow>
@@ -152,13 +158,14 @@ export function RepositoryDetailPage() {
           </dl>
         </div>
         <div className="panel details">
-          <Eyebrow>INGESTION STATUS</Eyebrow>
-          <h2>Ready for integration.</h2>
+          <Eyebrow>LATEST ANALYSIS</Eyebrow>
+          <h2>{runs.length ? 'Follow the recorded execution.' : 'Source registered.'}</h2>
           <p>
-            The URL is registered. Existence, public visibility, source files, and test commands
-            have not been inspected.
+            {runs.length
+              ? 'The latest run status comes from the backend. Inspect its events and execution evidence to understand what completed.'
+              : 'Create an analysis job to begin repository mapping and security investigation.'}
           </p>
-          <Status value="not_configured" />
+          {runs[0] && <Status value={runs[0].status} />}
         </div>
       </div>
       <section className="panel">
@@ -178,7 +185,7 @@ export function RepositoryDetailPage() {
         ) : (
           <EmptyState
             title="No analysis requests yet."
-            description="Create a job to record the request. Agent execution is pending integration."
+            description="Create a job to begin collecting real security findings and execution evidence."
           />
         )}
       </section>
