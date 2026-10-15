@@ -23,6 +23,17 @@ export function parseJUnit(xml: string, maxCases = 3_000): TestSummary {
           : 'passed';
     cases.push({ id: cls ? `${cls}::${name}` : name, outcome });
   }
+  // .NET TRX (dotnet test --logger trx): <UnitTestResult testName="..." outcome="Passed|Failed|NotExecuted" />
+  if (!cases.length && /<TestRun\b/.test(xml)) {
+    const trx = /<UnitTestResult\b([^>]*?)(\/>|>)/g;
+    while ((m = trx.exec(xml))) {
+      const outcome = attr(m[1], 'outcome');
+      cases.push({
+        id: attr(m[1], 'testName'),
+        outcome: outcome === 'Passed' ? 'passed' : outcome === 'Failed' ? 'failed' : outcome === 'Error' || outcome === 'Timeout' ? 'error' : 'skipped',
+      });
+    }
+  }
   const count = (o: string) => cases.filter((c) => c.outcome === o).length;
   return {
     total: cases.length,

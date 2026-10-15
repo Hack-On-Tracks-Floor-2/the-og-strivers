@@ -8,6 +8,8 @@ export interface ExecutionRequest {
   network: 'none';
   readOnlyRoot: true;
   maxOutputBytes: number;
+  /** Selects the runner image (defaults to Python). */
+  language?: import('../agents/toolchain.js').Runtime;
 }
 export interface ExecutionResult {
   exitCode: number;

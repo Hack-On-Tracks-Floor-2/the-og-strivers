@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { openDatabase, type Database } from '../../apps/api/src/database/index.js';
 import { createApp } from '../../apps/api/src/app.js';
@@ -11,11 +11,15 @@ import { provisionReviewer } from '../../apps/api/src/services/auth.js';
 import { WorkspaceStore } from '../../apps/api/src/repositories/clone.js';
 import { createPipeline, type PipelineSandbox } from '../../apps/api/src/pipeline/orchestrator.js';
 import { createAiClient, TokenBudget, type AiClient } from '../../apps/api/src/ai/client.js';
-import { findCandidates } from '../../apps/api/src/scanners/funnel.js';
+import { findCandidates, PYTHON_SINKS } from '../../apps/api/src/scanners/funnel.js';
+import { JS_SINKS } from '../../apps/api/src/scanners/javascript.js';
+import { auditSummary, parseAudit } from '../../apps/api/src/verification/audit.js';
+import { OWASP_TOP_10, owaspFor } from '@proofpatch/shared';
 import { applyEdits, unifiedDiff, changedLineCount, EditError } from '../../apps/api/src/patching/edits.js';
 import { parseJUnit, compareSuites } from '../../apps/api/src/verification/junit.js';
 import { DockerSandbox, hardeningArgs } from '../../apps/api/src/verification/docker.js';
 import { inspectRepository } from '../../apps/api/src/agents/intelligence.js';
+import { detectToolchain, type Language } from '../../apps/api/src/agents/toolchain.js';
 import { randomUUID } from 'node:crypto';
 
 const FIXTURE = join(__dirname, 'fixtures', 'vulnapp');
@@ -71,6 +75,136 @@ describe('search funnel (local, zero AI tokens)', () => {
   });
 });
 
+describe('JavaScript support', () => {
+  const JS_FIXTURE = join(__dirname, 'fixtures', 'vulnjs');
+  it('maps a node:test repository to the JavaScript toolchain', async () => {
+    const map = await inspectRepository(JS_FIXTURE);
+    expect(map.languages[0]).toBe('JavaScript');
+    const tc = await detectToolchain(JS_FIXTURE, map);
+    expect(tc).toMatchObject({ language: 'javascript', framework: 'node:test' });
+    if ('unsupported' in tc) throw new Error(tc.unsupported);
+    expect(tc.suite).toContain('--test-reporter-destination=/out/junit.xml');
+    expect(tc.only('test/proofpatch_security/x.test.js').at(-1)).toBe('test/proofpatch_security/x.test.js');
+  });
+  it('picks Jest or Mocha from package.json and rejects unsupported languages', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pp-tc-'));
+    const map = { languages: ['JavaScript'], frameworks: [], entryPoints: [], testCommands: [], hasNodeTests: true };
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { jest: '^29' }, type: 'module' }));
+    const jest = await detectToolchain(dir, map);
+    expect(jest).toMatchObject({ framework: 'jest', esm: true });
+    if ('unsupported' in jest) throw new Error(jest.unsupported);
+    const only = jest.only('test/proofpatch_security/a.test.js');
+    // The path must not follow --reporters (Jest would read it as a reporter module).
+    expect(only.indexOf('test/proofpatch_security/a.test.js')).toBeLessThan(only.indexOf('--reporters=default'));
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'mocha' } }));
+    expect(await detectToolchain(dir, map)).toMatchObject({ framework: 'mocha' });
+    expect(await detectToolchain(dir, { ...map, languages: ['Go'] })).toHaveProperty('unsupported');
+    await rm(dir, { recursive: true, force: true });
+  });
+  it('finds the command injection and sends only the enclosing function', async () => {
+    const { candidates, filesScanned } = await findCandidates(JS_FIXTURE, { language: 'javascript' });
+    expect(filesScanned).toBe(1); // test/ excluded
+    expect(candidates[0]).toMatchObject({ file: 'src/greet.js', cwe: 'CWE-78', id: 'C1' });
+    expect(candidates[0].snippet).toContain('function greet(name)');
+    expect(candidates[0].snippet).toContain('execSync(`echo Hello ${name}`)');
+    expect(candidates[0].snippet).not.toContain('function shout');
+  });
+});
+
+describe('more languages: detection and toolchains', () => {
+  // [language, file, source, vulnerable line text, CWE, other function that must not be in the snippet]
+  const cases: [string, string, string, string, string, string][] = [
+    ['go', 'store/store.go', 'package store\n\nimport (\n\t"database/sql"\n\t"fmt"\n)\n\nfunc Find(db *sql.DB, name string) (*sql.Rows, error) {\n\treturn db.Query(fmt.Sprintf("SELECT id FROM users WHERE name = \'%s\'", name))\n}\n\nfunc Hello() string {\n\treturn "hi"\n}\n', 'db.Query(fmt.Sprintf', 'CWE-89', 'func Hello'],
+    ['java', 'src/main/java/app/Files.java', 'package app;\n\nimport java.nio.file.*;\n\npublic class Files2 {\n    public String read(String name) throws Exception {\n        return new String(java.nio.file.Files.readAllBytes(Paths.get("/data", name)));\n    }\n\n    public int add(int a, int b) {\n        return a + b;\n    }\n}\n', 'Paths.get("/data", name)', 'CWE-22', 'public int add'],
+    ['csharp', 'Api/Users.cs', 'using System.Data.SqlClient;\n\npublic class Users\n{\n    public void Find(SqlConnection c, string name)\n    {\n        var cmd = new SqlCommand("SELECT * FROM users WHERE name = \'" + name + "\'", c);\n    }\n\n    public int Count() { return 0; }\n}\n', 'new SqlCommand(', 'CWE-89', 'public int Count'],
+    ['php', 'src/Report.php', '<?php\nfunction showReport($name) {\n    return file_get_contents("/reports/" . $name);\n}\n\nfunction title() {\n    return "Reports";\n}\n', 'file_get_contents("/reports/"', 'CWE-22', 'function title'],
+    ['ruby', 'app/models/user.rb', 'class User\n  def self.search(name)\n    where("name = \'#{name}\'")\n  end\n\n  def greeting\n    "hi"\n  end\nend\n', 'where("name', 'CWE-89', 'def greeting'],
+    ['rust', 'src/main.rs', 'use std::process::Command;\n\nfn run(cmd: &str) {\n    Command::new("sh").arg("-c").arg(cmd).output().unwrap();\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n', 'Command::new("sh")', 'CWE-78', 'fn add'],
+    ['typescript', 'src/user.ts', 'import { execSync } from "node:child_process";\n\nexport function archive(name: string): string {\n  return execSync(`tar czf ${name}.tgz data`).toString();\n}\n\nexport function size(n: number): string {\n  return `${n} B`;\n}\n', 'execSync(`tar', 'CWE-78', 'function size'],
+    ['c', 'src/main.c', '#include <string.h>\n\nvoid copy(char *dst, const char *src)\n{\n    strcpy(dst, src);\n}\n\nint add(int a, int b)\n{\n    return a + b;\n}\n', 'strcpy(dst, src)', 'CWE-120', 'int add'],
+  ];
+  it.each(cases)('%s: finds the planted bug and cuts out only its function', async (language, file, source, line, cwe, other) => {
+    const dir = await mkdtemp(join(tmpdir(), `pp-${language}-`));
+    await mkdir(join(dir, dirname(file)), { recursive: true });
+    await writeFile(join(dir, file), source);
+    const { candidates } = await findCandidates(dir, { language: language as Language });
+    const hit = candidates.find((c) => c.cwe === cwe);
+    expect(hit, JSON.stringify(candidates.map((c) => [c.cwe, c.rule]))).toBeTruthy();
+    expect(hit!.snippet).toContain(line);
+    expect(hit!.snippet).not.toContain(other);
+    await rm(dir, { recursive: true, force: true });
+  });
+  it('picks proven toolchains for Go, PHP and TypeScript and detection-only for the rest', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pp-tc2-'));
+    const map = (languages: string[]) => ({ languages, frameworks: [], entryPoints: [], testCommands: [], hasNodeTests: true });
+    await writeFile(join(dir, 'go.mod'), 'module example.com/app\n\ngo 1.22\n');
+    const go = await detectToolchain(dir, map(['Go']));
+    expect(go).toMatchObject({ language: 'go', runtime: 'go', framework: 'go test' });
+    if (!('only' in go)) throw new Error('go');
+    expect(go.securityTestPath('store/store.go', 'x')).toBe('store/proofpatch_security_test.go');
+    expect(go.only('store/proofpatch_security_test.go').slice(-3)).toEqual(['-run', '^TestProofPatch', './store']);
+    await writeFile(join(dir, 'composer.json'), JSON.stringify({ 'require-dev': { 'phpunit/phpunit': '^11' } }));
+    expect(await detectToolchain(dir, map(['PHP']))).toMatchObject({ language: 'php', runtime: 'php', framework: 'phpunit' });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { vitest: '^2' } }));
+    expect(await detectToolchain(dir, map(['TypeScript']))).toMatchObject({ language: 'typescript', runtime: 'node', framework: 'vitest' });
+    // Without their build files these are scanned only; C and C++ are always detection-only.
+    for (const lang of ['Java', 'Kotlin', 'C#', 'Ruby', 'Rust', 'C', 'C++'])
+      expect(await detectToolchain(dir, map([lang]))).toMatchObject({ detectOnly: true });
+    expect(await detectToolchain(dir, map(['Haskell']))).toHaveProperty('unsupported');
+    // With their build files they get full proofs.
+    await writeFile(join(dir, 'pom.xml'), '<project><dependencies><dependency><artifactId>junit-jupiter</artifactId></dependency></dependencies></project>');
+    const java = await detectToolchain(dir, map(['Java']));
+    expect(java).toMatchObject({ runtime: 'java', label: 'Java · Maven + JUnit 5' });
+    if (!('only' in java)) throw new Error('java');
+    expect(java.securityTestPath('src/main/java/com/a/b/X.java', 'x')).toBe('src/test/java/com/a/b/ProofPatchSecurityTest.java');
+    await mkdir(join(dir, 'App.Tests'), { recursive: true });
+    await writeFile(join(dir, 'App.Tests', 'App.Tests.csproj'), '<Project><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit" /></ItemGroup></Project>');
+    const cs = await detectToolchain(dir, map(['C#']));
+    expect(cs).toMatchObject({ runtime: 'dotnet', label: 'C# · dotnet test (xunit)' });
+    if (!('only' in cs)) throw new Error('cs');
+    expect(cs.securityTestPath('src/X.cs', 'x')).toBe('App.Tests/ProofPatchSecurityTests.cs');
+    await writeFile(join(dir, 'Gemfile'), 'gem "rspec"\n');
+    expect(await detectToolchain(dir, map(['Ruby']))).toMatchObject({ runtime: 'ruby', framework: 'rspec' });
+    await writeFile(join(dir, 'Cargo.toml'), '[package]\nname = "my-crate"\n');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'lib.rs'), '');
+    const rust = await detectToolchain(dir, map(['Rust']));
+    expect(rust).toMatchObject({ runtime: 'rust', framework: 'cargo test' });
+    if (!('only' in rust)) throw new Error('rust');
+    expect(rust.testGuidance).toContain('use my_crate::');
+    expect(await detectToolchain(dir, map(['C']))).toMatchObject({ detectOnly: true });
+    // C/C++: CTest (or a "make test" target) gives full proofs; the attack test is a standalone ASan program.
+    await writeFile(join(dir, 'CMakeLists.txt'), 'project(x C)\nenable_testing()\nadd_test(NAME a COMMAND a)\n');
+    const c = await detectToolchain(dir, map(['C']));
+    expect(c).toMatchObject({ runtime: 'c', framework: 'ctest', label: 'C · CMake + CTest + ASan' });
+    if (!('only' in c)) throw new Error('c');
+    expect(c.securityTestPath('src/parser.c', 'x')).toBe('proofpatch_security/proofpatch_security.c');
+    expect(c.only('proofpatch_security/proofpatch_security.c')).toEqual(['c-security-test', 'proofpatch_security/proofpatch_security.c']);
+    expect(await detectToolchain(dir, map(['C++']))).toMatchObject({ language: 'cpp', label: 'C++ · CMake + CTest + ASan' });
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('OWASP Top 10 coverage', () => {
+  it.each([
+    ['Python', PYTHON_SINKS],
+    ['JavaScript', JS_SINKS],
+  ])('%s rules map to every code-detectable OWASP category', (_lang, rules) => {
+    for (const rule of rules) expect(owaspFor(rule.cwe), `${rule.id} ${rule.cwe}`).not.toBeNull();
+    const covered = new Set(rules.map((r) => owaspFor(r.cwe)!.id));
+    // A06 (vulnerable components) is covered by the dependency audit, not by code rules.
+    for (const c of OWASP_TOP_10.filter((c) => c.id !== 'A06')) expect(covered.has(c.id), c.id).toBe(true);
+  });
+  it('reads npm audit and pip-audit reports as A06 advisories', () => {
+    const npm = parseAudit('javascript', JSON.stringify({ vulnerabilities: { lodash: { severity: 'high', range: '<4.17.21', via: [{ url: 'https://github.com/advisories/GHSA-35jh-r3h4-6jhm' }], fixAvailable: { version: '4.17.21' } } } }));
+    expect(npm).toEqual([{ name: 'lodash', version: '<4.17.21', severity: 'high', ids: ['GHSA-35jh-r3h4-6jhm'], fix: 'upgrade to 4.17.21' }]);
+    const pip = parseAudit('python', JSON.stringify({ dependencies: [{ name: 'requests', version: '2.19.0', vulns: [{ id: 'PYSEC-2018-28', fix_versions: ['2.20.0'], aliases: ['CVE-2018-18074'] }] }, { name: 'six', version: '1.16.0', vulns: [] }] }));
+    expect(pip).toEqual([{ name: 'requests', version: '2.19.0', severity: 'known CVE', ids: ['PYSEC-2018-28', 'CVE-2018-18074'], fix: 'upgrade to 2.20.0' }]);
+    expect(auditSummary(pip!)).toMatch(/OWASP A06\): 1 vulnerable package — requests 2.19.0/);
+    expect(parseAudit('python', 'not json')).toBeNull();
+  });
+});
+
 describe('patch edits and diffs', () => {
   const read = (p: string) => (p === 'a.py' ? 'x = 1\ny = 2\nz = 3\n' : null);
   it('applies exact search/replace edits and emits a unified diff', () => {
@@ -87,6 +221,14 @@ describe('patch edits and diffs', () => {
       applyEdits([{ file: 'a.py', search: ' = ', replace: '=' }], () => 'a = 1\nb = 2\n'),
     ).toThrow(/not unique/);
   });
+  it('matches a re-indented search with escaped backticks and keeps the file indentation', () => {
+    const file = 'function a(x) {\n  return run(`echo ${x}`);\n}\n';
+    const [change] = applyEdits(
+      [{ file: 'a.js', search: 'return run(\\`echo ${x}\\`);', replace: "return run('echo', [x]);\nif (!x) throw new Error('empty');" }],
+      () => file,
+    );
+    expect(change.proposed).toBe("function a(x) {\n  return run('echo', [x]);\n  if (!x) throw new Error('empty');\n}\n");
+  });
 });
 
 describe('JUnit parsing and the regression gate', () => {
@@ -97,6 +239,10 @@ describe('JUnit parsing and the regression gate', () => {
   it('counts outcomes', () => {
     const s = parseJUnit(xml([['a', 'passed'], ['b', 'failed'], ['c', 'skipped'], ['d', 'error']]));
     expect([s.total, s.passed, s.failed, s.skipped, s.errors]).toEqual([4, 1, 1, 1, 1]);
+  });
+  it('reads .NET TRX results', () => {
+    const trx = '<TestRun><Results><UnitTestResult testName="A.Ok" outcome="Passed" /><UnitTestResult testName="A.Bad" outcome="Failed"></UnitTestResult><UnitTestResult testName="A.Skip" outcome="NotExecuted" /></Results></TestRun>';
+    expect(parseJUnit(trx)).toMatchObject({ total: 3, passed: 1, failed: 1, skipped: 1 });
   });
   it('fails only when a previously passing test stops passing', () => {
     const before = parseJUnit(xml([['a', 'passed'], ['b', 'failed']]));

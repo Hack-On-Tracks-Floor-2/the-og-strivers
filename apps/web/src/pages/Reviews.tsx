@@ -9,6 +9,7 @@ import { loadRunBundle } from '../hooks/useSecurityData';
 import {
   normalizeCategory,
   normalizeSeverity,
+  owaspLabel,
   repositoryLabel,
   severityOrder,
   verificationState,
@@ -350,6 +351,7 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
                       <strong>{row.repository}</strong>
                       <span>
                         {row.finding?.cwe ? `${row.finding.cwe} · ` : ''}
+                        {owaspLabel(row.finding?.cwe) ? `${owaspLabel(row.finding?.cwe).replace('OWASP ', '')} · ` : ''}
                         {row.finding?.category ?? `Finding ${row.patch.findingId.slice(0, 8)}`}
                       </span>
                       <code title={row.patch.files.map((file) => file.path).join(', ')}>

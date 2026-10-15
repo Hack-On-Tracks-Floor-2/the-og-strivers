@@ -10,6 +10,7 @@ import { DockerSandbox } from './verification/docker.js';
 import { createPipeline } from './pipeline/orchestrator.js';
 import { createLocator } from './scanners/locator.js';
 import { githubPublisher } from './merging/github.js';
+import type { AnalysisRun, Patch } from '@proofpatch/shared';
 // npm workspace commands run in apps/api, so resolve config from project root.
 const root = process.cwd().endsWith('api') ? resolve(process.cwd(), '../..') : process.cwd();
 config({ path: resolve(root, '.env'), quiet: true });
@@ -51,6 +52,14 @@ const dataRoot = resolve(root, process.env.WORK_PATH ?? '.data/work');
 const store = new WorkspaceStore(resolve(dataRoot, 'workspaces'));
 const sandbox = new DockerSandbox({
   image: process.env.SANDBOX_IMAGE ?? 'proofpatch-runner:py312',
+  nodeImage: process.env.SANDBOX_NODE_IMAGE ?? 'proofpatch-runner:node22',
+  goImage: process.env.SANDBOX_GO_IMAGE ?? 'proofpatch-runner:go122',
+  phpImage: process.env.SANDBOX_PHP_IMAGE ?? 'proofpatch-runner:php83',
+  javaImage: process.env.SANDBOX_JAVA_IMAGE ?? 'proofpatch-runner:java21',
+  dotnetImage: process.env.SANDBOX_DOTNET_IMAGE ?? 'proofpatch-runner:dotnet8',
+  rubyImage: process.env.SANDBOX_RUBY_IMAGE ?? 'proofpatch-runner:ruby33',
+  rustImage: process.env.SANDBOX_RUST_IMAGE ?? 'proofpatch-runner:rust180',
+  cImage: process.env.SANDBOX_C_IMAGE ?? 'proofpatch-runner:c13',
   docker: process.env.DOCKER_BIN || 'docker',
   workspacePath: (id) => store.path(id),
   scratchRoot: resolve(dataRoot, 'scratch'),
@@ -65,6 +74,23 @@ const pipeline = createPipeline({
   github: githubPublisher(),
   tokenBudget: Number(process.env.RUN_TOKEN_BUDGET) > 0 ? Number(process.env.RUN_TOKEN_BUDGET) : 30_000,
 });
+// Runs and merges execute in this process: anything still in flight at startup was interrupted by a restart.
+const stale = await db.query<{ id: string; document: AnalysisRun }>(
+  "SELECT id, document FROM runs WHERE document->>'status' IN ('queued','mapping','analyzing','patching','verifying')",
+);
+for (const { id, document } of stale.rows)
+  await db.query('UPDATE runs SET document=$1 WHERE id=$2', [
+    { ...document, status: 'failed', error: 'Interrupted by a server restart. Start a new scan.', updatedAt: new Date().toISOString() },
+    id,
+  ]);
+const merging = await db.query<{ id: string; document: Patch }>("SELECT id, document FROM patches WHERE document->'merge'->>'status' = 'merging'");
+for (const { id, document } of merging.rows)
+  await db.query('UPDATE patches SET document=$1 WHERE id=$2', [
+    { ...document, merge: { ...document.merge, status: 'failed', message: 'Interrupted by a server restart. Retry the merge.' } },
+    id,
+  ]);
+if (stale.rows.length || merging.rows.length)
+  console.log(`Marked ${stale.rows.length} interrupted run(s) and ${merging.rows.length} merge(s) as failed.`);
 const capability = await pipeline.status();
 console.log(
   capability.available

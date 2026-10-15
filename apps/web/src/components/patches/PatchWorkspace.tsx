@@ -6,6 +6,7 @@ import {
   diffStatistics,
   formatDuration,
   durationMs,
+  owaspLabel,
   patchEvidence,
   recordedMetadata,
   repositoryLabel,
@@ -17,6 +18,7 @@ import {
 import { Eyebrow, Status, date } from '../ui';
 import { DiffViewer } from '../code/DiffViewer';
 import { MergePanel } from './MergePanel';
+import { RegressionTable } from './RegressionTable';
 
 export function PatchWorkspace({
   patch,
@@ -41,6 +43,7 @@ export function PatchWorkspace({
         <div>
           <Eyebrow>
             PATCH / {patch.id.slice(0, 8)} · ATTEMPT {patch.attempt}
+            {owaspLabel(finding?.cwe) ? ` · ${owaspLabel(finding?.cwe)}` : ''}
           </Eyebrow>
           <h2>
             {finding
@@ -105,6 +108,7 @@ export function PatchWorkspace({
           </p>
         </section>
       </div>
+      <RegressionTable stages={stages} />
       <section className="patch-verification">
         <div className="section-header">
           <div>

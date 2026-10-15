@@ -21,6 +21,8 @@ import type { RepositoryIngestionService } from '../repositories/ingestion.js';
 import type { WorkspaceStore } from '../repositories/clone.js';
 import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
+import { detectToolchain, type Runtime, type Toolchain } from '../agents/toolchain.js';
+import { auditSummary, parseAudit } from '../verification/audit.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
 import { EditError, unifiedDiff } from '../patching/edits.js';
@@ -38,7 +40,7 @@ import type { Locator } from '../scanners/locator.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
-  prepare(workspace: WorkspaceHandle, signal: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
+  prepare(workspace: WorkspaceHandle, signal: AbortSignal, runtime?: Runtime): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean; audit?: string }>;
   executeWith(request: ExecutionRequest, depsId: string, signal: AbortSignal): Promise<CapabilityResult<SandboxRun>>;
   cleanup(workspaceId: string): Promise<void>;
 }
@@ -124,11 +126,25 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     return { ...from, id };
   }
 
+  // The runtime follows the dependency folder: whatever was prepared for a workspace decides its image.
+  const languageOf = new Map<string, Runtime>();
+  async function prepareDeps(workspace: WorkspaceHandle, tc: Toolchain, signal: AbortSignal) {
+    languageOf.set(workspace.id, tc.runtime);
+    return sandbox.prepare(workspace, signal, tc.runtime);
+  }
+  async function toolchainFor(root: string) {
+    const map = await inspectRepository(root);
+    const tc = await detectToolchain(root, map);
+    if ('unsupported' in tc) throw new StageFailure(`Unsupported repository: ${tc.unsupported}`);
+    return { map, tc };
+  }
+
   async function execute(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
     const result = await sandbox.executeWith(
       {
         workspace,
         argv,
+        language: languageOf.get(depsId) ?? 'python',
         timeoutMs: testTimeoutMs,
         memoryMb: 1024,
         cpuLimit: 1,
@@ -144,7 +160,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   }
 
   async function runSuite(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
-    const out = await execute(workspace, depsId, [...argv, '--junitxml=/out/junit.xml'], signal);
+    const out = await execute(workspace, depsId, argv, signal); // toolchain argv already writes /out/junit.xml
     const tests = out.files['junit.xml'] ? parseJUnit(out.files['junit.xml']) : null;
     return { out, tests, logs: tail(`${out.stdout}\n${out.stderr}`) };
   }
@@ -256,18 +272,33 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await event(run, 'stage_completed', `Cloned at commit ${original.commitSha}.`);
 
       // 2. Map the repository without executing it.
-      const map = await inspectRepository(store.path(original.id));
-      if (!map.testCommands.length)
-        throw new StageFailure(`No supported test suite found (languages: ${map.languages.join(', ') || 'none'}). Supported: Python + pytest.`);
-      const testArgv = map.testCommands[0];
-      await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · test command ${JSON.stringify(testArgv)}.`);
+      const { map, tc: chain } = await toolchainFor(store.path(original.id));
+      if ('detectOnly' in chain) {
+        await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${chain.label}.`);
+        await setRun(run, { status: 'analyzing' });
+        const found = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, language: chain.language, onUsage });
+        await event(run, 'stage_completed', `Search funnel: ${found.filesScanned} source files → ${found.hits} scanner hits → ${found.candidates.length} snippets sent to AI → ${found.issues.length} confirmed.`);
+        if (!found.issues.length) throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');
+        for (const issue of found.issues.slice(0, 6)) await saveFinding(run, issue);
+        await setRun(run, { status: 'needs_review', error: null });
+        await event(run, 'stage_completed', `${Math.min(found.issues.length, 6)} AI-confirmed finding(s) recorded for review. ${chain.reason}`);
+        return;
+      }
+      const tc = chain;
+      const testArgv = tc.suite;
+      await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${tc.label} · test command ${JSON.stringify(testArgv)}.`);
 
       // 3. Install dependencies in the isolated preparation stage (only stage with network).
       await event(run, 'stage_started', 'Installing declared dependencies in the sandbox preparation stage.');
-      const prepared = await sandbox.prepare(original, signal);
+      const prepared = await prepareDeps(original, tc, signal);
       if (prepared.exitCode !== 0)
         throw new StageFailure(`Dependency installation failed (exit ${prepared.exitCode}${prepared.timedOut ? ', timed out' : ''}): ${tail(prepared.stderr, 600)}`);
       await event(run, 'stage_completed', 'Dependencies installed. All further execution runs with network disabled.');
+      const advisories = parseAudit(tc.runtime, prepared.audit);
+      if (advisories) {
+        const summary = auditSummary(advisories);
+        await event(run, 'stage_completed', summary, await artifact(run, 'report', `${summary}\n\n${JSON.stringify(advisories, null, 2)}`));
+      }
 
       // 4. Baseline: the original test suite, before any change.
       await setRun(run, { status: 'analyzing' });
@@ -280,6 +311,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       // 5. Local scanner (Bandit, in the sandbox) + sink search + one AI confirmation call.
       let external: ExternalHit[] = [];
       try {
+        if (tc.runtime !== 'python') throw new Error('Bandit is Python-only.');
         const scan = await execute(original, original.id, ['bandit', '-r', '.', '-f', 'json', '-o', '/out/bandit.json', '-q', '-x', './tests,./test'], signal);
         const report = JSON.parse(scan.files['bandit.json'] ?? '{"results":[]}') as {
           results: { filename: string; line_number: number; test_id: string; issue_text: string; issue_cwe?: { id?: number } }[];
@@ -294,7 +326,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       } catch {
         external = [];
       }
-      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, onUsage });
+      const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, language: tc.language, onUsage });
       await event(
         run,
         'stage_completed',
@@ -307,14 +339,17 @@ export function createPipeline(options: PipelineOptions): Pipeline {
 
       // 6–8. Patch → reproduce (red) → retest (green) → regression, with feedback retries.
       const testFiles = (await listSourceFiles(store.path(original.id))).filter((f) => f.isTest).map((f) => f.path);
+      // Every confirmed finding (up to 3) gets its own proven patch; each lands in the review queue.
+      let proven = 0;
       for (const { issue, finding } of findings) {
         let previousFailure: string | undefined;
+        try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           await setRun(run, { status: 'patching' });
           await event(run, 'stage_started', `Generating patch for ${finding.file}:${finding.startLine} (${finding.cwe}), attempt ${attempt}/${maxAttempts}.`);
           let generated: GeneratedPatch;
           try {
-            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, attempt, onUsage });
+            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, attempt, toolchain: tc, onUsage });
           } catch (error) {
             if (!(error instanceof EditError)) throw error;
             previousFailure = `Your edits could not be applied: ${error.message}`;
@@ -332,9 +367,9 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           });
           workspaces.push(patched.id);
           // -rP prints captured output of passing tests too, so a no-effect attack shows its shell/DB errors.
-          const securityArgv = [...testArgv, '--tb=short', '-rP', testPath];
+          const securityArgv = tc.only(testPath);
           const baselineRecord = await record(run, patch.id, 'baseline', true, {
-            exitCode: baseline.out.exitCode, command: [...testArgv, '--junitxml=/out/junit.xml'], logs: baseline.logs,
+            exitCode: baseline.out.exitCode, command: testArgv, logs: baseline.logs,
             tests: baseline.tests, junit: baseline.out.files['junit.xml'],
           });
           void baselineRecord;
@@ -414,16 +449,25 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           await record(run, patch.id, 'final_decision', true, { exitCode: 0, command: ['proofpatch', 'decide'], logs: report });
           await artifact(run, 'report', report);
           await setPatchStatus(patch, 'needs_review');
-          await setRun(run, { status: 'needs_review', error: null });
-          await event(run, 'stage_completed', `Proof complete on attempt ${attempt}: vulnerability reproduced, fixed, and the existing suite is intact. Awaiting human review.`);
-          return;
+          await event(run, 'stage_completed', `Proof complete for ${finding.cwe} at ${finding.file}:${finding.startLine} on attempt ${attempt}: vulnerability reproduced, fixed, and the existing suite is intact.`);
+          proven += 1;
+          break;
+        }
+        } catch (error) {
+          // Out of AI budget after at least one proven fix: keep what is proven instead of failing the run.
+          if (!(error instanceof AiError) || proven === 0) throw error;
+          await event(run, 'stage_failed', `Stopped after ${proven} proven fix(es): ${error.message}`);
+          break;
         }
       }
-      throw new StageFailure(`No patch passed all proofs within ${maxAttempts} attempts per finding.`);
+      if (!proven) throw new StageFailure(`No patch passed all proofs within ${maxAttempts} attempts per finding.`);
+      await setRun(run, { status: 'needs_review', error: null });
+      await event(run, 'stage_completed', `${proven} of ${findings.length} confirmed vulnerabilit${findings.length === 1 ? 'y' : 'ies'} fixed and proven. Awaiting human review.`);
     } finally {
       for (const id of workspaces) {
         await store.remove(id).catch(() => {});
         await sandbox.cleanup(id).catch(() => {});
+        languageOf.delete(id);
       }
     }
   }
@@ -528,16 +572,16 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       const latest = await copyWorkspace({ id: repoId, repositoryId: repository.id, commitSha: baseSha }, {});
       workspaces.push(latest.id);
       await rm(join(store.path(latest.id), '.git'), { recursive: true, force: true });
-      const map = await inspectRepository(store.path(latest.id));
-      if (!map.testCommands.length) throw new StageFailure('The latest code no longer has a supported test suite.');
-      const testArgv = map.testCommands[0];
-      const prepared = await sandbox.prepare(latest, signal);
+      const { tc } = await toolchainFor(store.path(latest.id));
+      if ('detectOnly' in tc) throw new StageFailure(`${tc.label}: fixes cannot be re-proven automatically, so they cannot be merged.`);
+      const testArgv = tc.suite;
+      const prepared = await prepareDeps(latest, tc, signal);
       if (prepared.exitCode !== 0) throw new StageFailure(`Dependency installation failed on the latest code (exit ${prepared.exitCode}).`);
       const baseline = await runSuite(latest, latest.id, testArgv, signal);
       if (!baseline.tests?.total) throw new StageFailure('The latest code produced no test results.');
       checks.push({ stage: 'baseline', passed: true, summary: `Latest code: ${summarize(baseline.tests)}.` });
       if (!patch.securityTest) throw new StageFailure('The approved patch has no security test to re-prove it.');
-      const securityArgv = [...testArgv, '--tb=short', '-rP', patch.securityTest.path];
+      const securityArgv = tc.only(patch.securityTest.path);
       const withTest = await copyWorkspace(latest, { [patch.securityTest.path]: patch.securityTest.content });
       workspaces.push(withTest.id);
       const repro = await runSuite(withTest, latest.id, securityArgv, signal);
@@ -586,6 +630,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       for (const id of workspaces) {
         await store.remove(id).catch(() => {});
         await sandbox.cleanup(id).catch(() => {});
+        languageOf.delete(id);
       }
     }
   }

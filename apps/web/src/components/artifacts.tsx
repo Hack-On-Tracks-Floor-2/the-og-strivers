@@ -1,7 +1,7 @@
 import type { Finding, Patch, VerificationRun, RunEvent } from '@proofpatch/shared';
 import { ChevronDown, Download, FileCode2 } from 'lucide-react';
 import { Eyebrow, Status, date } from './ui';
-import { durationMs, formatDuration, stageLabels } from '../lib/security-data';
+import { durationMs, formatDuration, owaspLabel, stageLabels } from '../lib/security-data';
 import { PatchWorkspace } from './patches/PatchWorkspace';
 
 export function FindingCard({ finding }: { finding: Finding }) {
@@ -9,7 +9,10 @@ export function FindingCard({ finding }: { finding: Finding }) {
     <article className="panel details finding-card" id={`finding-${finding.id}`}>
       <div className="artifact-heading">
         <div>
-          <Eyebrow>{finding.cwe ?? 'CWE NOT SUPPLIED'}</Eyebrow>
+          <Eyebrow>
+            {finding.cwe ?? 'CWE NOT SUPPLIED'}
+            {owaspLabel(finding.cwe) ? ` · ${owaspLabel(finding.cwe)}` : ''}
+          </Eyebrow>
           <h2>{finding.category}</h2>
         </div>
         <Status value={finding.severity} />

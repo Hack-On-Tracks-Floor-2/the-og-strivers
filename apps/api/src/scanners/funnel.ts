@@ -4,6 +4,42 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listSourceFiles } from '../agents/intelligence.js';
 import type { Locator } from './locator.js';
+import { JS_ROUTE, JS_SINKS, JS_USER_INPUT, jsFunctionSpans } from './javascript.js';
+import { C_SINKS, CSHARP_SINKS, GO_SINKS, JAVA_SINKS, KOTLIN_SINKS, PHP_SINKS, ROUTE, RUBY_SINKS, RUST_SINKS, USER_INPUT as INPUT_BY_LANGUAGE } from './languages.js';
+import { textFunctionSpans } from './spans.js';
+import type { Language } from '../agents/toolchain.js';
+
+/** What the funnel needs per language: files, rules, user-input/route hints, comment syntax. */
+interface LanguageProfile {
+  files: RegExp;
+  sinks: SinkRule[];
+  input: RegExp;
+  route: RegExp;
+  comment: RegExp;
+  spans: 'python' | 'typescript' | 'text';
+}
+const C_COMMENT = /^\s*(\/\/|\*|\/\*)/;
+export function languageProfile(language: Language = 'python'): LanguageProfile {
+  const text = (files: RegExp, sinks: SinkRule[], key: string, comment = C_COMMENT): LanguageProfile =>
+    ({ files, sinks, input: INPUT_BY_LANGUAGE[key], route: ROUTE[key], comment, spans: 'text' });
+  switch (language) {
+    case 'javascript':
+      return { files: /\.[cm]?jsx?$/, sinks: JS_SINKS, input: JS_USER_INPUT, route: JS_ROUTE, comment: C_COMMENT, spans: 'typescript' };
+    case 'typescript':
+      return { files: /\.([cm]?ts|tsx|[cm]?jsx?)$/, sinks: JS_SINKS, input: JS_USER_INPUT, route: JS_ROUTE, comment: C_COMMENT, spans: 'typescript' };
+    case 'go': return text(/\.go$/, GO_SINKS, 'go');
+    case 'java': return text(/\.java$/, JAVA_SINKS, 'java');
+    case 'kotlin': return text(/\.kts?$/, KOTLIN_SINKS, 'kotlin');
+    case 'csharp': return text(/\.cs$/, CSHARP_SINKS, 'csharp');
+    case 'php': return text(/\.php$/, PHP_SINKS, 'php', /^\s*(\/\/|#|\*|\/\*)/);
+    case 'ruby': return text(/\.rb$/, RUBY_SINKS, 'ruby', /^\s*#/);
+    case 'rust': return text(/\.rs$/, RUST_SINKS, 'rust');
+    case 'c':
+    case 'cpp': return text(/\.(c|h|cc|cpp|cxx|hh|hpp|hxx)$/, C_SINKS, 'c');
+    default:
+      return { files: /\.py$/, sinks: PYTHON_SINKS, input: USER_INPUT, route: /@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/, comment: /^\s*#/, spans: 'python' };
+  }
+}
 
 /**
  * Token-efficient code search. Steps 1–2 of the funnel run locally with zero AI tokens:
@@ -49,6 +85,29 @@ export const PYTHON_SINKS: SinkRule[] = [
   { id: 'secret', cwe: 'CWE-798', category: 'Hardcoded credential', weight: 4,
     pattern: /(password|secret|api_key|token)\s*=\s*["'][^"']{8,}["']/i },
   { id: 'debug', cwe: 'CWE-489', category: 'Debug mode enabled', weight: 2, pattern: /\.run\([^)]*debug\s*=\s*True/ },
+  // OWASP Top 10 coverage beyond the classic sinks (category follows from the CWE, see owaspFor()).
+  { id: 'cors-wildcard', cwe: 'CWE-942', category: 'Permissive CORS', weight: 3,
+    pattern: /CORS\([^)]*(origins\s*=\s*["']\*|supports_credentials\s*=\s*True)|Access-Control-Allow-Origin["']?\s*[\]:,=]\s*["']\*/ },
+  { id: 'temp-file', cwe: 'CWE-377', category: 'Insecure temporary file', weight: 3, pattern: /tempfile\.mktemp\s*\(/ },
+  { id: 'weak-cipher', cwe: 'CWE-327', category: 'Broken cipher', weight: 5,
+    pattern: /\b(DES|DES3|ARC4|Blowfish)\.new\s*\(|MODE_ECB|algorithms\.(TripleDES|ARC4|Blowfish)\b/ },
+  { id: 'password-hash', cwe: 'CWE-916', category: 'Weak password hashing', weight: 5,
+    pattern: /hashlib\.(md5|sha1|sha224|sha256)\s*\([^)]*(password|passwd|pwd)/i },
+  { id: 'nosql', cwe: 'CWE-943', category: 'NoSQL injection', weight: 6,
+    pattern: /["']\$where["']|\.(find|find_one|update_one|delete_one|aggregate)\s*\(\s*(request\.|json\.loads\s*\(\s*request)/ },
+  { id: 'xss-markup', cwe: 'CWE-79', category: 'Cross-site scripting', weight: 6,
+    pattern: /Markup\s*\(\s*(f["']|[^)]*(%|\+|\.format\())|autoescape\s*=\s*False|mark_safe\s*\(\s*(f["']|[^)]*request)|\|\s*safe\s*\}\}|make_response\s*\(\s*f["'][^"']*<[^"']*\{/ },
+  { id: 'ldap-xpath', cwe: 'CWE-90', category: 'LDAP/XPath injection', weight: 6,
+    pattern: /\.(search_s|search|xpath)\s*\([^)]*(f["'][^"']*\{|["']\s*%\s*|["']\s*\+)/ },
+  { id: 'mass-assign', cwe: 'CWE-915', category: 'Mass assignment', weight: 4,
+    pattern: /\*\*\s*request\.(json|form|args|get_json\s*\(\s*\))|__dict__\.update\s*\(\s*request\.|setattr\s*\([^)]*request\.(json|form)/ },
+  { id: 'cookie-insecure', cwe: 'CWE-614', category: 'Insecure cookie', weight: 3,
+    pattern: /set_cookie\s*\([^)]*(secure\s*=\s*False|httponly\s*=\s*False)|SESSION_COOKIE_(SECURE|HTTPONLY)\s*=\s*False/ },
+  { id: 'jwt-unverified', cwe: 'CWE-347', category: 'JWT signature not verified', weight: 7,
+    pattern: /jwt\.decode\s*\([^)]*(verify\s*=\s*False|["']verify_signature["']\s*:\s*False|algorithms\s*=\s*\[[^\]]*["']none["'])/i },
+  { id: 'log-secret', cwe: 'CWE-532', category: 'Secret written to logs', weight: 3,
+    pattern: /(log(ger|ging)?\.(debug|info|warning|error|critical|exception)|print)\s*\([^)]*\b(password|passwd|secret|token|api_key|apikey)\b/i },
+  { id: 'swallowed-error', cwe: 'CWE-390', category: 'Exception silently swallowed', weight: 2, pattern: /except(\s+[\w.]+(\s+as\s+\w+)?)?\s*:\s*pass\b/ },
 ];
 const USER_INPUT = /\brequest\.(args|form|values|json|files|cookies|headers|data|GET|POST|get_json|query_params|path_params)|\binput\(|sys\.argv|environ\[/;
 
@@ -218,11 +277,20 @@ export function numbered(lines: string[], start: number, end: number) {
 
 export async function findCandidates(
   root: string,
-  options: { maxCandidates?: number; maxSnippetLines?: number; external?: ExternalHit[]; locator?: Locator | null } = {},
+  options: {
+    maxCandidates?: number;
+    maxSnippetLines?: number;
+    external?: ExternalHit[];
+    locator?: Locator | null;
+    language?: Language;
+  } = {},
 ): Promise<{ candidates: Candidate[]; filesScanned: number; hits: number; model?: ModelSummary }> {
   const maxCandidates = options.maxCandidates ?? 6;
   const maxSnippetLines = options.maxSnippetLines ?? 45;
-  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && f.path.endsWith('.py'));
+  const lang = options.language ?? 'python';
+  const profile = languageProfile(lang);
+  const sinks = profile.sinks;
+  const files = (await listSourceFiles(root)).filter((f) => !f.isTest && profile.files.test(f.path));
   const contents = new Map<string, string[]>();
   type Hit = Omit<Candidate, 'id' | 'startLine' | 'endLine' | 'snippet' | 'source'> & { external: boolean };
   const hits: Hit[] = [];
@@ -230,8 +298,8 @@ export async function findCandidates(
     const lines = (await readFile(join(root, file.path), 'utf8')).split(/\r?\n/);
     contents.set(file.path, lines);
     lines.forEach((text, i) => {
-      if (/^\s*#/.test(text)) return;
-      for (const rule of PYTHON_SINKS)
+      if (profile.comment.test(text)) return;
+      for (const rule of sinks)
         if (rule.pattern.test(text))
           hits.push({ file: file.path, line: i + 1, cwe: rule.cwe, category: rule.category, rule: rule.id,
             score: rule.weight, external: false });
@@ -246,7 +314,7 @@ export async function findCandidates(
   // Trained model: scores every function, so it can rank regex hits and surface code the rules miss.
   let modelFns: ModelFunction[] = [];
   let model: ModelSummary | undefined;
-  if (options.locator) {
+  if (options.locator && profile.spans === 'python') {
     try {
       const r = await scoreFunctions(root, files.map((f) => f.path), contents, options.locator);
       modelFns = r.scored;
@@ -268,7 +336,10 @@ export async function findCandidates(
   // Function spans for every hit, in one python process.
   const wanted = new Map<string, number[]>();
   for (const h of hits) wanted.set(h.file, [...(wanted.get(h.file) ?? []), h.line]);
-  const spans = await functionSpans(root, wanted);
+  const spans =
+    profile.spans === 'python' ? await functionSpans(root, wanted)
+    : profile.spans === 'typescript' ? await jsFunctionSpans(root, wanted)
+    : await textFunctionSpans(root, wanted, lang);
 
   const scored = hits.map((h) => {
     const lines = contents.get(h.file)!;
@@ -276,8 +347,8 @@ export async function findCandidates(
     let [start, end] = span ?? [Math.max(1, h.line - 8), Math.min(lines.length, h.line + 8)];
     const body = lines.slice(start - 1, end).join('\n');
     let score = h.score;
-    if (USER_INPUT.test(body)) score += 4; // user input reaches the same function
-    if (/@\w+\.(route|get|post|put|delete)\(|def (get|post|put|delete)\(self, request/.test(body)) score += 2;
+    if (profile.input.test(body)) score += 4; // user input reaches the same function
+    if (profile.route.test(body)) score += 2;
     const m = modelFor(h.file, h.line);
     if (m) score += Math.round(m.score * 10); // trained model agrees this function is risky
     if (end - start + 1 > maxSnippetLines) {

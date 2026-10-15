@@ -10,6 +10,8 @@ export interface RepositoryMap {
   frameworks: string[];
   entryPoints: string[];
   testCommands: string[][];
+  /** JavaScript test files exist (node:test, Jest or Mocha decide how they run). */
+  hasNodeTests?: boolean;
 }
 export interface RepositoryIntelligenceAgent {
   inspect(

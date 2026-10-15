@@ -6,6 +6,13 @@ import type {
   RunEvent,
   VerificationRun,
 } from '@proofpatch/shared';
+import { owaspFor } from '@proofpatch/shared';
+
+/** "OWASP A03 Injection" for a CWE, or '' when it is outside the Top 10 mapping. */
+export function owaspLabel(cwe: string | null | undefined) {
+  const category = owaspFor(cwe);
+  return category ? `OWASP ${category.id} ${category.name}` : '';
+}
 
 export type RunBundle = {
   run: AnalysisRun;

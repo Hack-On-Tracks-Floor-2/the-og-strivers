@@ -26,16 +26,58 @@ export function applyEdits(edits: Edit[], read: (path: string) => string | null)
       if (text === null) throw new EditError(`Edit targets a file that does not exist: ${path}`);
       return normalize(text);
     })();
-    const search = normalize(edit.search);
+    let search = normalize(edit.search);
+    let replace = normalize(edit.replace);
     if (!search.trim()) throw new EditError(`Empty search block for ${path}.`);
-    const first = current.indexOf(search);
-    if (first < 0) throw new EditError(`Search text not found in ${path}. Copy it exactly from the snippet (without line numbers).`);
-    if (current.indexOf(search, first + 1) >= 0) throw new EditError(`Search text is not unique in ${path}; include more surrounding lines.`);
-    const proposed = current.slice(0, first) + normalize(edit.replace) + current.slice(first + search.length);
+    let first = current.indexOf(search);
+    if (first < 0) {
+      // Models sometimes re-indent the block or escape template backticks; match line by line instead.
+      const loose = looseFind(current, search);
+      if (!loose) throw new EditError(`Search text not found in ${path}. Copy it exactly from the snippet (without line numbers).`);
+      if (loose === 'ambiguous') throw new EditError(`Search text is not unique in ${path}; include more surrounding lines.`);
+      const indent = (s: string) => /^[ \t]*/.exec(s.split('\n').find((l) => l.trim()) ?? '')![0];
+      const fileIndent = indent(loose.search);
+      const modelIndent = indent(search);
+      replace = replace
+        .replace(/\\`/g, '`')
+        .split('\n')
+        .map((l) => (l.trim() && l.startsWith(modelIndent) ? fileIndent + l.slice(modelIndent.length) : l))
+        .join('\n');
+      ({ first, search } = loose);
+    } else if (current.indexOf(search, first + 1) >= 0)
+      throw new EditError(`Search text is not unique in ${path}; include more surrounding lines.`);
+    const proposed = current.slice(0, first) + replace + current.slice(first + search.length);
     const original = changes.get(path)?.original ?? normalize(read(path)!);
     changes.set(path, { path, original, proposed });
   }
   return [...changes.values()].filter((c) => c.original !== c.proposed);
+}
+
+/**
+ * Finds the search block ignoring indentation, trailing spaces and escaped backticks. Returns the exact
+ * matching text from the file, so the edit still replaces precisely those lines, or 'ambiguous'.
+ */
+function looseFind(text: string, search: string): { first: number; search: string } | 'ambiguous' | null {
+  const clean = (line: string) => line.replace(/\\`/g, '`').trim();
+  const want = search.split('\n').map(clean);
+  while (want.length && !want[0]) want.shift();
+  while (want.length && !want[want.length - 1]) want.pop();
+  if (!want.length) return null;
+  const lines = text.split('\n');
+  const offsets: number[] = [];
+  let pos = 0;
+  for (const line of lines) {
+    offsets.push(pos);
+    pos += line.length + 1;
+  }
+  const hits: number[] = [];
+  for (let i = 0; i + want.length <= lines.length; i++)
+    if (want.every((w, k) => clean(lines[i + k]) === w)) hits.push(i);
+  if (hits.length > 1) return 'ambiguous';
+  if (!hits.length) return null;
+  const start = hits[0];
+  const end = start + want.length - 1;
+  return { first: offsets[start], search: text.slice(offsets[start], offsets[end] + lines[end].length) };
 }
 
 /** Line-level unified diff (3 lines of context) between two texts. */
