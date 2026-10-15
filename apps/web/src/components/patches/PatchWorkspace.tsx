@@ -17,6 +17,7 @@ import {
 import { Eyebrow, Status, date } from '../ui';
 import { DiffViewer } from '../code/DiffViewer';
 import { MergePanel } from './MergePanel';
+import { RegressionTable } from './RegressionTable';
 
 export function PatchWorkspace({
   patch,
@@ -105,6 +106,7 @@ export function PatchWorkspace({
           </p>
         </section>
       </div>
+      <RegressionTable stages={stages} />
       <section className="patch-verification">
         <div className="section-header">
           <div>

@@ -1590,3 +1590,18 @@ details[open] > summary > .disclosure-chevron {
 .merge-checks li.passed { color: var(--lime, #c8f560); }
 .merge-checks li.failed { color: #ff6b6b; }
 .merge-checks li strong { text-transform: capitalize; }
+
+/* Regression gate: test-by-test before/after */
+.regression-table { margin: 18px 0; }
+.regression-table h3 { margin: 6px 0; }
+.regression-table h3.passed { color: var(--lime, #c8f560); }
+.regression-table h3.failed { color: #ff6b6b; }
+.regression-scroll { max-height: 360px; overflow: auto; border: 1px solid rgba(255, 255, 255, 0.1); }
+.regression-table table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.regression-table th, .regression-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.regression-table th { position: sticky; top: 0; background: #111; font-weight: 600; }
+.regression-table td.mono { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.regression-table .outcome.passed { color: var(--lime, #c8f560); }
+.regression-table .outcome.failed, .regression-table .outcome.error { color: #ff6b6b; }
+.regression-table tr.broken { background: rgba(255, 107, 107, 0.12); }
+.regression-table tr.added td:last-child { color: #8ab4ff; }
