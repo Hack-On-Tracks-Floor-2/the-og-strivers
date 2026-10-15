@@ -22,6 +22,7 @@ import { DockerSandbox, hardeningArgs } from '../../apps/api/src/verification/do
 import { inspectRepository } from '../../apps/api/src/agents/intelligence.js';
 import { detectToolchain, type Language } from '../../apps/api/src/agents/toolchain.js';
 import { randomUUID } from 'node:crypto';
+import { closeMLWorker } from '../../apps/api/src/services/mini-ml.js';
 
 const FIXTURE = join(__dirname, 'fixtures', 'vulnapp');
 const VULN_LINE = `    rows = db.execute("SELECT id, name, email FROM users WHERE name = '%s'" % name).fetchall()`;
@@ -490,6 +491,7 @@ describe.sequential('end-to-end pipeline', () => {
     folder = await mkdtemp(join(tmpdir(), 'pp-e2e-'));
   });
   afterAll(async () => {
+    closeMLWorker();
     await db?.close();
     await rm(folder, { recursive: true, force: true });
   });
@@ -510,7 +512,7 @@ describe.sequential('end-to-end pipeline', () => {
         async ingest(repository) {
           const id = randomUUID();
           await cp(FIXTURE, store.path(id), { recursive: true });
-          return { state: 'completed', data: { id, repositoryId: repository.id, commitSha: 'f1x7ure' } };
+          return { state: 'completed', data: { id, repositoryId: repository.id, commitSha: 'f'.repeat(40) } };
         },
       },
     });
@@ -537,6 +539,11 @@ describe.sequential('end-to-end pipeline', () => {
     expect((await developer.get('/api/submissions')).body.data[0].status).toBe('in_review');
     const findings = (await dev.get(`/api/runs/${runId}/findings`)).body.data;
     expect(findings[0]).toMatchObject({ cwe: 'CWE-89', source: 'scanner+ai', file: 'vulnapp/store.py' });
+    const ml = (await dev.get(`/api/runs/${runId}/ml-findings`)).body.data;
+    expect(ml[0].finding).toEqual(findings[0]);
+    expect(ml[0].ml).toMatchObject({ findingId: findings[0].id, language: 'python', commitSha: 'f'.repeat(40), file: findings[0].file });
+    expect(ml[0].ml.prediction.modelVersion).toBe('owasp-python-0.1-b20e1accbd58');
+    expect(ml[0].ml.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
     const [patch] = (await dev.get(`/api/runs/${runId}/patches`)).body.data;
     expect(patch.status).toBe('needs_review');
     expect(patch.unifiedDiff).toContain('+    rows = db.execute("SELECT id, name, email FROM users WHERE name = ?", (name,)).fetchall()');
@@ -557,6 +564,25 @@ describe.sequential('end-to-end pipeline', () => {
     await reviewer.post('/api/auth/login').set('Origin', origin).send({ email: 'reviewer@example.com', password, role: 'reviewer' });
     const decision = await reviewer.post(`/api/reviews/${patch.id}/decision`).set('Origin', origin).send({ decision: 'approved', reason: 'Exploit test red→green, suite intact.' });
     expect(decision.status).toBe(201);
+  });
+
+  it('continues the real orchestration and proof gates when the ML runtime is unavailable', async () => {
+    closeMLWorker();
+    const previous = process.env.MINI_ML_PYTHON;
+    process.env.MINI_ML_PYTHON = join(folder, 'missing-classifier-runtime.exe');
+    try {
+      const { dev, runId } = await setup(fakeAi([[VULN_LINE, SAFE_LINE]]));
+      expect((await dev.get(`/api/runs/${runId}`)).body.data.status).toBe('needs_review');
+      const [row] = (await dev.get(`/api/runs/${runId}/ml-findings`)).body.data;
+      expect(row.finding.cwe).toBe('CWE-89');
+      expect(row.finding.severity).toBe('high');
+      expect(row.ml.status).toBe('unknown');
+      expect(row.ml.prediction.cwe).toBeNull();
+      expect((await dev.get(`/api/runs/${runId}/verification`)).body.data.every((record: {status: string}) => record.status === 'passed')).toBe(true);
+    } finally {
+      closeMLWorker();
+      if (previous === undefined) delete process.env.MINI_ML_PYTHON; else process.env.MINI_ML_PYTHON = previous;
+    }
   });
 
   it('retries with feedback when a patch breaks existing tests, then gives up honestly', async () => {

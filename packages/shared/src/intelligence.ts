@@ -67,6 +67,33 @@ export const MLModelCatalogSchema = z.object({
   })),
 });
 export type MLModelCatalog = z.infer<typeof MLModelCatalogSchema>;
+/** A sidecar for one normalized finding. ML never changes the original scanner record. */
+export const FindingMLSchema = z.object({
+  findingId: z.string().uuid(),
+  runId: z.string().uuid(),
+  repositoryId: z.string().uuid(),
+  ownerId: z.string().uuid(),
+  repositoryUrl: z.string().url(),
+  commitSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
+  file: z.string().min(1).max(500),
+  language: z.string(),
+  findingRange: z.object({ startLine: z.number().int().positive(), endLine: z.number().int().positive() }),
+  sourceSha256: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  snippet: z.object({
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    characters: z.number().int().max(20000),
+    transformation: z.enum(['verbatim', 'dedent']),
+  }).optional(),
+  status: z.enum(['predicted', 'unknown', 'unsupported', 'invalid_input', 'unavailable']),
+  scannerCwe: z.string().nullable(),
+  comparison: z.enum(['agrees', 'disagrees', 'not_comparable']),
+  prediction: MLPredictionSchema.optional(),
+  reason: z.string().optional(),
+  createdAt: z.string().datetime(),
+});
+export type FindingML = z.infer<typeof FindingMLSchema>;
 const SuiteSummary = z.object({
   total: z.number(),
   passed: z.number(),

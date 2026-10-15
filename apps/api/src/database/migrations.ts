@@ -30,4 +30,11 @@ CREATE TABLE artifacts (id TEXT PRIMARY KEY, run_id UUID NOT NULL REFERENCES run
 CREATE INDEX artifacts_run ON artifacts(run_id);
 `,
   },
+  {
+    version: 3,
+    sql: `
+CREATE TABLE finding_ml (finding_id UUID PRIMARY KEY REFERENCES findings(id) ON DELETE CASCADE, run_id UUID NOT NULL REFERENCES runs(id), repository_id UUID NOT NULL REFERENCES repositories(id), owner_id UUID NOT NULL REFERENCES users(id), document JSONB NOT NULL);
+CREATE INDEX finding_ml_run ON finding_ml(run_id);
+`,
+  },
 ];

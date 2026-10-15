@@ -38,6 +38,7 @@ import type { ExecutionRequest } from '../verification/sandbox.js';
 import type { SandboxRun } from '../verification/docker.js';
 import type { ExternalHit, ModelSummary } from '../scanners/funnel.js';
 import type { Locator } from '../scanners/locator.js';
+import { recordFindingML } from '../services/finding-ml.js';
 
 export interface PipelineSandbox {
   ready(): Promise<string | null>;
@@ -394,7 +395,16 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       if (!detection.issues.length)
         throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');
       const findings: { issue: DetectedIssue; finding: Finding }[] = [];
-      for (const issue of detection.issues.slice(0, 3)) findings.push({ issue, finding: await saveFinding(run, issue) });
+      for (const issue of detection.issues.slice(0, 3)) {
+        const finding = await saveFinding(run, issue);
+        findings.push({ issue, finding });
+        // Enrich only saved findings from the untouched pinned clone; never gate patching/proofs on ML.
+        const ml = await recordFindingML(db, { run, repository, workspace: original, root: store.path(original.id), finding })
+          .catch(() => ({ record: null, persisted: false }));
+        await event(run, 'stage_completed', ml.persisted
+          ? `ML classification recorded for ${finding.file}:${finding.startLine}: ${ml.record?.status}. Experimental category only; scanner evidence unchanged.`
+          : `ML classification could not be recorded for ${finding.file}:${finding.startLine}. Continuing with the original finding.`);
+      }
 
       // 6–8. Patch → reproduce (red) → retest (green) → regression, with feedback retries.
       const testFiles = (await listSourceFiles(store.path(original.id))).filter((f) => f.isTest).map((f) => f.path);
