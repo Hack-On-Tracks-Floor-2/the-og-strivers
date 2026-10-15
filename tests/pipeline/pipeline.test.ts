@@ -346,6 +346,24 @@ password = "hunter2-very-secret"` },
     expect(second.usage.cached).toBe(true);
     expect(calls).toBe(3); // Gemini 429, one retry, then Groq; the repeat is served from cache
   });
+  it('rotates to the next key of the same provider at once when a key is rate limited', async () => {
+    const used: string[] = [];
+    const ai = createAiClient(
+      { GROQ_API_KEY: 'q1', GROQ_API_KEY_2: 'q2', GROQ_API_KEY_3: ' ', GROQ_API_KEY_4: 'q1', GEMINI_API_KEY: 'g', AI_RETRY_DELAY_MS: '60000' },
+      {
+        fetchImpl: (async (url: string, init: RequestInit) => {
+          const key = String(url).includes('groq') ? (init.headers as Record<string, string>).Authorization : 'gemini';
+          used.push(key);
+          return key === 'Bearer q1' ? new Response('', { status: 429 }) : groqOk('{"a":1}');
+        }) as typeof fetch,
+      },
+    )!;
+    // Blank and duplicate keys are skipped.
+    expect(ai.providers).toEqual(['Groq (openai/gpt-oss-120b)', 'Groq key 2 (openai/gpt-oss-120b)', 'Gemini (gemini-3.8-flash)']);
+    const result = await ai.completeJSON<{ a: number }>(req, new TokenBudget(10_000), new AbortController().signal);
+    expect(result.usage.provider).toBe('Groq key 2');
+    expect(used).toEqual(['Bearer q1', 'Bearer q2']); // no 60 s wait before switching keys
+  });
   it('refuses work that would exceed the run budget', async () => {
     const ai = createAiClient({ GEMINI_API_KEY: 'g' }, { fetchImpl: (async () => ok('{}')) as typeof fetch })!;
     await expect(ai.completeJSON(req, new TokenBudget(50), new AbortController().signal)).rejects.toThrow(/budget/i);
