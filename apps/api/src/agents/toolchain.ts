@@ -69,7 +69,8 @@ function nodeToolchain(framework: 'node:test' | 'jest' | 'mocha', esm: boolean):
     label: `JavaScript · ${framework}`,
     framework,
     suite: [...base, ...(framework === 'mocha' ? ['--recursive'] : [])],
-    only: (path) => [...base, path],
+    // Jest's --reporters swallows following arguments, so the test path must come right after "jest".
+    only: (path) => (framework === 'jest' ? [...base.slice(0, 6), '--runTestsByPath', path, ...base.slice(6)] : [...base, path]),
     securityTestDir: 'test/proofpatch_security',
     securityTestName: /^[A-Za-z0-9_-]+\.test\.js$/,
     defaultSecurityTestName: 'proofpatch-security.test.js',

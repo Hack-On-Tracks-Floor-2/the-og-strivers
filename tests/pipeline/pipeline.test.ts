@@ -87,7 +87,12 @@ describe('JavaScript support', () => {
     const dir = await mkdtemp(join(tmpdir(), 'pp-tc-'));
     const map = { languages: ['JavaScript'], frameworks: [], entryPoints: [], testCommands: [], hasNodeTests: true };
     await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { jest: '^29' }, type: 'module' }));
-    expect(await detectToolchain(dir, map)).toMatchObject({ framework: 'jest', esm: true });
+    const jest = await detectToolchain(dir, map);
+    expect(jest).toMatchObject({ framework: 'jest', esm: true });
+    if ('unsupported' in jest) throw new Error(jest.unsupported);
+    const only = jest.only('test/proofpatch_security/a.test.js');
+    // The path must not follow --reporters (Jest would read it as a reporter module).
+    expect(only.indexOf('test/proofpatch_security/a.test.js')).toBeLessThan(only.indexOf('--reporters=default'));
     await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'mocha' } }));
     expect(await detectToolchain(dir, map)).toMatchObject({ framework: 'mocha' });
     expect(await detectToolchain(dir, { ...map, languages: ['Go'] })).toHaveProperty('unsupported');

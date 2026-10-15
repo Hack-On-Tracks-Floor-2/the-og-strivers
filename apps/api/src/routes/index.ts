@@ -39,8 +39,9 @@ function submissionStatus(run: AnalysisRun | undefined, patchStates: string[]) {
   if (!run) return 'submitted';
   if (patchStates.includes('approved')) return 'approved';
   if (patchStates.includes('needs_review')) return 'in_review';
-  if (patchStates.length && patchStates.every((s) => s === 'rejected')) return 'rejected';
+  // Attempts the pipeline itself rejected are not a review: a failed run is a failed scan.
   if (run.status === 'failed') return 'scan_failed';
+  if (patchStates.length && patchStates.every((s) => s === 'rejected')) return 'rejected';
   if (run.status === 'not_configured') return 'submitted';
   if (['needs_review', 'verified'].includes(run.status)) return 'in_review';
   return 'scanning';
