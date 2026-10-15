@@ -85,8 +85,9 @@ export const CSHARP_SINKS: SinkRule[] = [
 
 export const PHP_SINKS: SinkRule[] = [
   r('php-sql', 'CWE-89', 'SQL injection', 9, /(mysqli_query|mysql_query|pg_query|->query|->exec|->prepare)\s*\([^)]*(\$_(GET|POST|REQUEST|COOKIE)|"[^"]*\$\w+|['"]\s*\.\s*\$)/i),
-  r('php-sql-build', 'CWE-89', 'SQL injection', 7, /["']\s*(SELECT|INSERT|UPDATE|DELETE)\b[^"']*(["']\s*\.\s*\$|\$\w+)/i),
-  r('php-cmd', 'CWE-78', 'Command injection', 9, /\b(system|exec|shell_exec|passthru|popen|proc_open)\s*\(|`[^`]*\$\w+/),
+  r('php-sql-build', 'CWE-89', 'SQL injection', 7, /["']\s*(SELECT|INSERT|UPDATE|DELETE)\b[^"']*(["']+\s*\.\s*\$|\$\w+)/i),
+  // PDO's $db->exec() runs SQL, not a shell: methods (-> / ::) are not command execution.
+  r('php-cmd', 'CWE-78', 'Command injection', 9, /(?<!->|::)\b(system|exec|shell_exec|passthru|popen|proc_open)\s*\(|`[^`]*\$\w+/),
   r('php-eval', 'CWE-95', 'Code injection', 9, /\b(eval|assert|create_function)\s*\(|preg_replace\s*\(\s*['"][^'"]*\/e[a-z]*['"]/),
   r('php-include', 'CWE-98', 'File inclusion', 8, /\b(include|require)(_once)?\s*\(?\s*\$/),
   r('php-path', 'CWE-22', 'Path traversal', 6, /\b(file_get_contents|fopen|readfile|unlink|file_put_contents|file)\s*\([^)]*\$/),
