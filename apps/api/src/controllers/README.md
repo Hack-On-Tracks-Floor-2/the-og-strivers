@@ -1,0 +1,1 @@
+Routes validate transport input in `routes/index.ts`. Domain operations live in `services`, `repositories` and `scanners`. Extract a controller here when an integration needs more than transport orchestration; do not create duplicate API routes.

@@ -1,0 +1,27 @@
+{
+  "name": "@proofpatch/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/apps/api/src/server.js"
+  },
+  "dependencies": {
+    "@proofpatch/shared": "*",
+    "@electric-sql/pglite": "^0.3.14",
+    "express": "^5.1.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "helmet": "^8.1.0",
+    "express-rate-limit": "^8.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "@types/express": "^5.0.3",
+    "@types/cookie-parser": "^1.4.9"
+  }
+}

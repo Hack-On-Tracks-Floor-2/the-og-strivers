@@ -1,0 +1,28 @@
+{
+  "name": "proofpatch-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run build -w @proofpatch/shared && concurrently -k -n api,web -c green,blue \"npm run dev -w @proofpatch/api\" \"npm run dev -w @proofpatch/web\"",
+    "build": "npm run build -w @proofpatch/shared && npm run build -w @proofpatch/api && npm run build -w @proofpatch/web",
+    "test": "npm run build -w @proofpatch/shared && vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "start": "npm run start -w @proofpatch/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^22.19.0",
+    "supertest": "^7.1.4",
+    "@types/supertest": "^6.0.3"
+  }
+}
