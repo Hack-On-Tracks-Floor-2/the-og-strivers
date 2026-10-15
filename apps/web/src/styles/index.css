@@ -1,13 +1,16 @@
 @import 'tailwindcss';
+@import './portals.css';
 @theme {
   --color-background: #0b0b0d;
   --color-surface: #141416;
+  --color-card: #1b1b1f;
   --color-lime: #d7ff3f;
   --color-ink: #f4f4f0;
   --color-muted: #96969b;
   --color-border: #29292d;
 }
 :root {
+  color-scheme: dark;
   font-family: Arial, Helvetica, sans-serif;
   color: #f4f4f0;
   background: #0b0b0d;
@@ -15,6 +18,8 @@
   font-weight: 400;
   --bg: #0b0b0d;
   --surface: #141416;
+  --card: #1b1b1f;
+  --font-heading: Arial, Helvetica, sans-serif;
   --lime: #d7ff3f;
   --text: #f4f4f0;
   --muted: #96969b;
@@ -22,6 +27,8 @@
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #414146 transparent;
 }
 body {
   margin: 0;
@@ -84,6 +91,11 @@ h2 {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.5px;
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
 }
 h3 {
   font-size: 15px;
@@ -150,11 +162,11 @@ pre,
   gap: 30px;
   border: 1px solid transparent;
   padding: 15px 23px;
-  min-height: 49px;
+  min-height: 46px;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
-  border-radius: 3px;
+  border-radius: 5px;
 }
 .button.primary {
   background: var(--lime);
@@ -190,13 +202,14 @@ pre,
   white-space: nowrap;
 }
 .brand-mark {
-  width: 31px;
-  height: 33px;
+  width: 36px;
+  height: 36px;
   display: inline-grid;
   place-items: center;
-  background: var(--lime);
-  color: var(--bg);
-  border-radius: 5px;
+  background: transparent;
+  color: var(--lime);
+  border: 1px solid var(--border);
+  border-radius: 50%;
 }
 .brand-ai {
   font-weight: 400;
@@ -220,7 +233,7 @@ pre,
   margin: auto;
 }
 .landing-header {
-  height: 98px;
+  height: 86px;
   padding: 0 5%;
   display: flex;
   align-items: center;
@@ -404,6 +417,7 @@ pre,
 }
 .auth-page {
   min-height: 100svh;
+  background: var(--bg) url('/portal-grid.svg') center / 320px 320px;
 }
 .back-link {
   display: inline-flex;
@@ -421,13 +435,13 @@ pre,
   display: grid;
   grid-template-columns: 1fr 420px;
   gap: 10%;
-  padding: 85px 40px;
+  padding: 78px 40px;
 }
 .auth-intro h1 {
   font-size: clamp(46px, 5.2vw, 76px);
   line-height: 1.03;
-  font-weight: 850;
-  letter-spacing: -4px;
+  font-weight: 750;
+  letter-spacing: -0.055em;
   margin: 27px 0;
 }
 .auth-intro > p {
@@ -443,17 +457,20 @@ pre,
   font-size: 9px;
 }
 .auth-form {
-  padding: 35px;
+  padding: 36px;
   border: 1px solid var(--border);
-  background: #111113;
+  background: var(--card);
   align-self: start;
 }
 .auth-form h2 {
-  font-size: 28px;
+  font-size: 29px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -1px;
   margin: 23px 0 8px;
 }
 .auth-form > p {
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 25px;
 }
 .auth-form > label {
@@ -471,6 +488,26 @@ pre,
 }
 .form-bottom a {
   color: var(--lime);
+}
+.demo-login {
+  padding: 0 0 17px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.demo-login .demo-fill-button {
+  width: 100%;
+  gap: 9px;
+  min-height: 43px;
+  padding: 11px 15px;
+  color: var(--lime);
+  border-color: #41482b;
+  font-size: 12px;
+}
+.demo-login p {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
 }
 .password-input {
   position: relative;
@@ -493,7 +530,7 @@ pre,
   flex-shrink: 0;
   position: fixed;
   inset: 0 auto 0 0;
-  background: #101012;
+  background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -512,8 +549,8 @@ pre,
   gap: 8px;
 }
 .sidebar .brand-mark {
-  width: 27px;
-  height: 29px;
+  width: 32px;
+  height: 32px;
 }
 .workspace-selector {
   display: flex;
@@ -564,15 +601,15 @@ pre,
   display: flex;
   align-items: center;
   gap: 11px;
-  font-size: 12px;
+  font-size: 13px;
   color: #9b9ba1;
   border: 1px solid transparent;
   border-radius: 4px;
   min-height: 43px;
 }
 .nav-link.active {
-  background: #20231a;
-  border-color: #343c1e;
+  background: #202319;
+  border-color: #41482b;
   color: var(--lime);
 }
 .nav-link:hover {
@@ -689,7 +726,7 @@ pre,
   gap: 8px;
 }
 .workspace-content {
-  padding: 39px 36px 52px;
+  padding: 43px 36px 52px;
   max-width: 1600px;
   width: 100%;
   margin: 0 auto;
@@ -700,27 +737,28 @@ pre,
   justify-content: space-between;
   gap: 25px;
   align-items: center;
-  margin-bottom: 33px;
+  margin-bottom: 36px;
 }
 .page-title .eyebrow {
-  font-size: 8px;
-  letter-spacing: 1.6px;
+  font-size: 10px;
+  letter-spacing: 1.8px;
 }
 .page-title h1 {
-  font-size: clamp(25px, 2.5vw, 38px);
-  line-height: 1.1;
-  font-weight: 800;
-  letter-spacing: -1.5px;
+  font-size: clamp(30px, 3vw, 46px);
+  line-height: 1.05;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
   margin: 13px 0 11px;
   overflow-wrap: anywhere;
 }
 .page-title p {
-  font-size: 12px;
+  font-size: 13px;
   margin: 0;
 }
 .page-title > .button {
-  font-size: 11px;
-  min-height: 42px;
+  font-size: 12px;
+  min-height: 44px;
   padding: 12px 17px;
   gap: 18px;
 }
@@ -732,14 +770,14 @@ pre,
 }
 .stat-card {
   border: 1px solid var(--border);
-  background: #111113;
-  padding: 20px 21px;
+  background: var(--card);
+  padding: 23px;
 }
 .stat-card > div {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 10px;
+  font-size: 12px;
   color: #b1b1b6;
   gap: 8px;
 }
@@ -748,15 +786,15 @@ pre,
 }
 .stat-card > strong {
   display: block;
-  font-size: 43px;
-  font-weight: 600;
+  font-size: 48px;
+  font-weight: 700;
   letter-spacing: -2px;
   margin: 20px 0 8px;
   line-height: 1;
 }
 .stat-caption {
-  font-size: 9px;
-  color: #77777e;
+  font-size: 10px;
+  color: var(--muted);
 }
 .workflow-strip {
   display: flex;
@@ -766,16 +804,16 @@ pre,
   padding: 22px 25px;
   border: 1px solid var(--border);
   margin-bottom: 27px;
-  background: #101012;
+  background: var(--surface);
 }
-.workflow-strip > div > span {
-  font-size: 10px;
+.workflow-strip > div:not(.workflow-steps) > span {
+  font-size: 12px;
   color: #85858c;
   display: block;
   margin-top: 7px;
 }
 .workflow-strip .eyebrow {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 1px;
   color: #c4c4c7;
 }
@@ -787,11 +825,11 @@ pre,
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .workflow-steps i {
   font:
-    8px Consolas,
+    10px Consolas,
     monospace;
   font-style: normal;
   color: #7b7b82;
@@ -807,7 +845,7 @@ pre,
 }
 .panel {
   border: 1px solid var(--border);
-  background: #111113;
+  background: var(--card);
   margin-bottom: 22px;
   min-width: 0;
 }
@@ -821,15 +859,17 @@ pre,
 }
 .panel-heading h2 {
   font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 .panel-heading .eyebrow {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 1.3px;
   margin-bottom: 8px;
 }
 .panel-heading .text-button {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .empty-state {
@@ -852,31 +892,31 @@ pre,
   margin-bottom: 23px;
 }
 .empty-state .eyebrow {
-  font-size: 7px;
+  font-size: 9px;
   letter-spacing: 1.4px;
 }
 .empty-state h2 {
-  font-size: 17px;
+  font-size: 19px;
   letter-spacing: -0.4px;
   margin: 13px 0 9px;
 }
 .empty-state p {
-  font-size: 11px;
+  font-size: 13px;
   max-width: 350px;
   margin: 0 0 22px;
   line-height: 1.8;
 }
 .empty-state .button {
-  font-size: 10px;
+  font-size: 12px;
   padding: 10px 15px;
-  min-height: 35px;
+  min-height: 42px;
   gap: 17px;
 }
 .getting-started {
   padding: 25px 24px;
 }
 .getting-started > .eyebrow {
-  font-size: 8px;
+  font-size: 9px;
 }
 .getting-started > h2 {
   font-size: 17px;
@@ -889,11 +929,11 @@ pre,
   margin: 20px 0;
 }
 .checklist-item strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 .checklist-item p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   margin: 6px 0 0;
 }
@@ -965,7 +1005,7 @@ pre,
   margin-bottom: 20px;
 }
 .details > p {
-  font-size: 12px;
+  font-size: 13px;
 }
 .repository-form {
   padding: 28px;
@@ -1059,7 +1099,7 @@ pre,
 }
 .status {
   font:
-    8px Consolas,
+    10px Consolas,
     monospace;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -1095,9 +1135,9 @@ pre,
 }
 .status-not_configured,
 .status-needs_review {
-  color: #c8bd8b;
-  border-color: #494331;
-  background: #1c1a13;
+  color: #b8b8be;
+  border-color: #414146;
+  background: var(--card);
 }
 .detail-grid {
   display: grid;
@@ -1126,8 +1166,8 @@ dd.mono {
   align-items: center;
   gap: 15px;
   padding: 21px 24px;
-  background: #171910;
-  border: 1px solid #383d26;
+  background: var(--surface);
+  border: 1px solid #454d2d;
   margin-bottom: 23px;
 }
 .capability-banner > svg {
@@ -1138,13 +1178,13 @@ dd.mono {
   flex: 1;
 }
 .capability-banner strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 .capability-banner p {
-  font-size: 11px;
+  font-size: 12px;
   margin: 6px 0 0;
-  color: #959987;
+  color: var(--muted);
 }
 .scanner-controls {
   display: flex;
@@ -1176,15 +1216,15 @@ dd.mono {
   display: flex;
   gap: 12px;
   align-items: center;
-  color: #74747c;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 12px;
   min-height: 42px;
   position: relative;
 }
 .pipeline-step small {
   margin-left: auto;
   font:
-    7px Consolas,
+    9px Consolas,
     monospace;
   letter-spacing: 0.7px;
 }
@@ -1206,8 +1246,9 @@ dd.mono {
 }
 .event-item code,
 .timeline-item code {
-  font-size: 9px;
-  color: #77777f;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
   overflow-wrap: anywhere;
 }
 .run-selector {
@@ -1226,7 +1267,7 @@ dd.mono {
 }
 .finding-card p,
 .finding-card li {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.8;
 }
@@ -1244,7 +1285,7 @@ dd.mono {
 }
 .code-tabs button {
   padding: 15px 20px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   border-bottom: 2px solid transparent;
 }
@@ -1256,9 +1297,9 @@ dd.mono {
   padding: 20px;
   overflow-x: auto;
   white-space: pre;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
-  background: #0c0c0e;
+  background: var(--bg);
   margin: 0;
   color: #c4c4cb;
 }
@@ -1271,6 +1312,8 @@ dd.mono {
 .file-path {
   padding: 12px 20px;
   color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0;
   border-bottom: 1px solid var(--border);
 }
 .artifact-reference {
@@ -1295,7 +1338,7 @@ dd.mono {
   width: 9px;
   height: 9px;
   border: 2px solid var(--lime);
-  background: #111113;
+  background: var(--card);
   position: absolute;
   left: -5px;
   top: 4px;
@@ -1309,7 +1352,7 @@ dd.mono {
   font-size: 9px;
 }
 .timeline-item p {
-  font-size: 12px;
+  font-size: 13px;
   margin: 12px 0 15px;
 }
 .timeline-item .code-block {

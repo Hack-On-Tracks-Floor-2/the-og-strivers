@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Eye, EyeOff, LockKeyhole } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Eye, EyeOff, LockKeyhole, FlaskConical } from 'lucide-react';
 import { UserSchema, LoginSchema, RegisterSchema } from '@proofpatch/shared';
 import { Brand, Eyebrow, ErrorBox, Loading } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
+
+const reviewerDemo = import.meta.env.DEV ? __REVIEWER_DEMO__ : null;
+
 export function AuthPage({
   role,
   register = false,
@@ -17,8 +20,19 @@ export function AuthPage({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [demoFilled, setDemoFilled] = useState(false);
   if (loading) return <Loading />;
   if (user) return <Navigate to={`/${user.role}/app`} replace />;
+  function fillDemoCredentials() {
+    if (!reviewerDemo || role !== 'reviewer') return;
+    setEmail(reviewerDemo.email);
+    setPassword(reviewerDemo.password);
+    setVisible(true);
+    setError('');
+    setDemoFilled(true);
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
@@ -100,6 +114,23 @@ export function AuthPage({
               ? 'Create your developer workspace.'
               : `Sign in to your ${role === 'reviewer' ? 'security reviewer' : 'developer'} workspace.`}
           </p>
+          {role === 'reviewer' && reviewerDemo && (
+            <div className="demo-login">
+              <button
+                type="button"
+                className="button secondary demo-fill-button"
+                onClick={fillDemoCredentials}
+                disabled={busy}
+              >
+                <FlaskConical size={16} aria-hidden="true" /> Fill demo credentials
+              </button>
+              <p role="status" aria-live="polite">
+                {demoFilled
+                  ? 'Demo credentials filled. Select Enter workspace to sign in.'
+                  : 'Use the local demo reviewer account.'}
+              </p>
+            </div>
+          )}
           {error && <ErrorBox message={error} />}{' '}
           {register && (
             <label>
@@ -123,6 +154,11 @@ export function AuthPage({
               required
               maxLength={254}
               placeholder="you@company.com"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setDemoFilled(false);
+              }}
             />
           </label>
           <label>
@@ -136,6 +172,11 @@ export function AuthPage({
                 minLength={register ? 12 : 1}
                 maxLength={128}
                 placeholder={register ? 'At least 12 characters' : 'Your password'}
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setDemoFilled(false);
+                }}
               />
               <button
                 type="button"
