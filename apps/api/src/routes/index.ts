@@ -10,6 +10,7 @@ import {
   AnalysisInputSchema,
   DecisionInputSchema,
   Id,
+  ClassifyInputSchema,
   type User,
   type AnalysisRun,
   type Patch,
@@ -32,6 +33,7 @@ import type { Pipeline } from '../pipeline/orchestrator.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultRegressionEvidence } from '../verification/regression-demo.js';
+import { modelInfo, classifySource, heldoutExample } from '../services/mini-ml.js';
 
 const reviewable = `EXISTS (SELECT 1 FROM patches p WHERE p.run_id=runs.id AND p.document->>'status' IN ('needs_review','approved','rejected'))`;
 /** One plain status a developer may see for their submission. */
@@ -60,12 +62,10 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (_req, res) =>
-      res
-        .status(429)
-        .json({
-          error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again later.' },
-          version: API_VERSION,
-        }),
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again later.' },
+        version: API_VERSION,
+      }),
   });
   const dummyHash = await hashPassword(randomUUID());
   const send = (res: import('express').Response, data: unknown, status = 200) =>
@@ -122,13 +122,34 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     send(res, { loggedOut: true });
   });
   router.use(authenticate(db));
+  router.get('/ml/model-info', async (_req, res) => send(res, await modelInfo()));
+  router.get('/ml/example', async (_req, res) => send(res, await heldoutExample()));
+  router.post(
+    '/ml/classify',
+    rateLimit({ windowMs: 60_000, limit: 12, standardHeaders: 'draft-8', legacyHeaders: false }),
+    async (req, res) => send(res, await classifySource(ClassifyInputSchema.parse(req.body))),
+  );
   // Read-only evidence for the trusted local demo; never launches caller-supplied code.
   router.get('/regression-demo/evidence', async (_req, res) => {
-    const text = await readFile(join(defaultRegressionEvidence(), 'latest.json'), 'utf8').catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') throw new HttpError(404, 'EVIDENCE_NOT_FOUND', 'Run npm run demo:regression first.');
-      throw error;
-    });
-    send(res, JSON.parse(text));
+    const text = await readFile(join(defaultRegressionEvidence(), 'latest.json'), 'utf8').catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT')
+          throw new HttpError(404, 'EVIDENCE_NOT_FOUND', 'Run npm run demo:regression first.');
+        throw error;
+      },
+    );
+    const report = JSON.parse(text);
+    let sourceFiles: { path: string; original: string; proposed: string }[] = [];
+    if (Id.safeParse(report.runId).success) {
+      const base = join(defaultRegressionEvidence(), report.runId);
+      const snapshots = await Promise.all([
+        readFile(join(base, 'vulnerable/src/reports.cjs'), 'utf8').catch(() => null),
+        readFile(join(base, 'patched/src/reports.cjs'), 'utf8').catch(() => null),
+      ]);
+      if (snapshots[0] !== null && snapshots[1] !== null)
+        sourceFiles = [{ path: 'src/reports.cjs', original: snapshots[0], proposed: snapshots[1] }];
+    }
+    send(res, { ...report, sourceFiles });
   });
   router.get('/auth/me', (req, res) => send(res, currentUser(req)));
   router.get('/repositories', async (req, res) => {
@@ -212,17 +233,15 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
       return;
     }
     // Job registration succeeds; execution capability explicitly remains unavailable.
-    res
-      .status(201)
-      .json({
-        data: run,
-        version: API_VERSION,
-        capability: {
-          code: 'CAPABILITY_UNAVAILABLE',
-          state: 'not_configured',
-          message: status?.reason ?? 'Agent integration pending. No analysis has been executed.',
-        },
-      });
+    res.status(201).json({
+      data: run,
+      version: API_VERSION,
+      capability: {
+        code: 'CAPABILITY_UNAVAILABLE',
+        state: 'not_configured',
+        message: status?.reason ?? 'Agent integration pending. No analysis has been executed.',
+      },
+    });
   });
   router.post('/runs/:id/cancel', requireRole('reviewer'), async (req, res) => {
     const run = await accessibleRun(req);
@@ -241,7 +260,10 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
   });
   router.get('/runs/:id/artifacts/:artifactId', requireRole('reviewer'), async (req, res) => {
     const run = await accessibleRun(req);
-    const artifactId = z.string().regex(/^[0-9a-f]{40}$/).parse(req.params.artifactId);
+    const artifactId = z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .parse(req.params.artifactId);
     const result = await db.query<{ content: string; document: { kind: string } }>(
       'SELECT content,document FROM artifacts WHERE id=$1 AND run_id=$2',
       [artifactId, run.id],
@@ -250,7 +272,10 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     const row = result.rows[0];
     res
       .type('text/plain')
-      .setHeader('Content-Disposition', `attachment; filename="${row.document.kind}-${artifactId.slice(0, 12)}.txt"`);
+      .setHeader(
+        'Content-Disposition',
+        `attachment; filename="${row.document.kind}-${artifactId.slice(0, 12)}.txt"`,
+      );
     res.send(row.content);
   });
   router.get('/runs/:id', requireRole('reviewer'), async (req, res) => send(res, await accessibleRun(req)));

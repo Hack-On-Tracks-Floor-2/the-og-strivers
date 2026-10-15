@@ -42,7 +42,13 @@ const content = {
     body: 'Test stages and activity appear here only when the backend records them.',
   },
 };
-export function ArtifactsPage({ kind }: { kind: keyof typeof content }) {
+export function ArtifactsPage({
+  kind,
+  embedded = false,
+}: {
+  kind: keyof typeof content;
+  embedded?: boolean;
+}) {
   const { user } = useAuth();
   const base = `/${user!.role}/app`;
   const copy = content[kind];
@@ -107,11 +113,13 @@ export function ArtifactsPage({ kind }: { kind: keyof typeof content }) {
   };
   return (
     <>
-      <PageTitle
-        eyebrow={copy.eyebrow}
-        title={kind === 'patches' && user!.role === 'reviewer' ? 'PATCH INSPECTION' : copy.title}
-        description={copy.description}
-      />
+      {!embedded && (
+        <PageTitle
+          eyebrow={copy.eyebrow}
+          title={kind === 'patches' && user!.role === 'reviewer' ? 'PATCH INSPECTION' : copy.title}
+          description={copy.description}
+        />
+      )}
       {index.data && (
         <RunScope
           runs={index.data.runs}

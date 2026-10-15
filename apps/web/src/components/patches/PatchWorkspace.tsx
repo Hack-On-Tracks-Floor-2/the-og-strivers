@@ -155,6 +155,12 @@ export function PatchWorkspace({
       <div className="patch-action-bar">
         <Link
           className="button secondary small-button"
+          to={`${base}/regression?run=${patch.runId}&patch=${patch.id}`}
+        >
+          Regression Verification <ArrowUpRight size={14} />
+        </Link>
+        <Link
+          className="button secondary small-button"
           to={`${base}/findings?run=${patch.runId}&finding=${patch.findingId}`}
         >
           View finding <ArrowUpRight size={14} />

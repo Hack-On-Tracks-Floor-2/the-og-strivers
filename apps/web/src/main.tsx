@@ -12,6 +12,8 @@ import { ArtifactsPage } from './pages/Artifacts';
 import { ReviewsPage } from './pages/Reviews';
 import { SettingsPage } from './pages/Settings';
 import { SubmissionsPage } from './pages/Submissions';
+import { MLIntelligencePage } from './pages/MLIntelligence';
+import { RegressionVerificationPage, PatchStudioPage } from './pages/RegressionVerification';
 import './styles/index.css';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -24,8 +26,10 @@ createRoot(document.getElementById('root')!).render(
               <Route path={`/${role}`} element={<Landing role={role} />} />
               <Route path={`/${role}/login`} element={<AuthPage role={role} />} />
               <Route path={`/${role}/app`} element={<Dashboard role={role} />}>
+                <Route path="ml" element={<MLIntelligencePage />} />
+                <Route path="regression" element={<RegressionVerificationPage />} />
                 {role === 'developer' ? (
-                  // Developers only submit repositories. Findings, patches and evidence are reviewer-only.
+                  // Repository findings, patches and evidence remain reviewer-only.
                   <Route index element={<SubmissionsPage />} />
                 ) : (
                   <>
@@ -35,7 +39,7 @@ createRoot(document.getElementById('root')!).render(
                     <Route path="scanner" element={<ScannerPage />} />
                     <Route path="queue" element={<ReviewsPage />} />
                     <Route path="findings" element={<ArtifactsPage kind="findings" />} />
-                    <Route path="patches" element={<ArtifactsPage kind="patches" />} />
+                    <Route path="patches" element={<PatchStudioPage />} />
                     <Route path="evidence" element={<ArtifactsPage kind="evidence" />} />
                     <Route path="decisions" element={<ReviewsPage decisions />} />
                     <Route path="settings" element={<SettingsPage />} />

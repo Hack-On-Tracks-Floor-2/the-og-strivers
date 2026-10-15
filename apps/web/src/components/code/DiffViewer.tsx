@@ -16,7 +16,11 @@ class EditorBoundary extends Component<
     return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
-export function DiffViewer({ patch }: { patch: Patch }) {
+export function DiffViewer({
+  patch,
+}: {
+  patch: Pick<Patch, 'id' | 'files' | 'unifiedDiff' | 'securityTest'>;
+}) {
   const [mode, setMode] = useState<'comparison' | 'unified' | 'security'>('comparison');
   const [path, setPath] = useState(patch.files[0]?.path ?? '');
   const [collapse, setCollapse] = useState(true);

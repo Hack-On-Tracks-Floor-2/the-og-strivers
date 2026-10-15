@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import react from '@vitejs/plugin-react';
 import tailwind from '@tailwindcss/vite';
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -25,7 +26,36 @@ export default defineConfig(({ command, mode }) => {
       : null;
 
   return {
-    plugins: [react(), tailwind()],
+    plugins: [
+      react(),
+      tailwind(),
+      {
+        name: 'public-deployment-revision',
+        generateBundle() {
+          let commit = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
+          let workingTreeDirty: boolean | null = null;
+          try {
+            commit ??= execFileSync('git', ['rev-parse', 'HEAD'], {
+              cwd: projectRoot,
+              encoding: 'utf8',
+            }).trim();
+            workingTreeDirty = Boolean(
+              execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+                cwd: projectRoot,
+                encoding: 'utf8',
+              }).trim(),
+            );
+          } catch {
+            /* Git metadata can be unavailable in manually uploaded deployment bundles. */
+          }
+          this.emitFile({
+            type: 'asset',
+            fileName: 'deployment-info.json',
+            source: JSON.stringify({ commit, workingTreeDirty, builtAt: new Date().toISOString() }),
+          });
+        },
+      },
+    ],
     envDir: projectRoot,
     define: {
       __REVIEWER_DEMO__: JSON.stringify(reviewerDemo),

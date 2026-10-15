@@ -15,13 +15,19 @@ import {
   ClipboardCheck,
   ListChecks,
   ExternalLink,
+  BrainCircuit,
+  FlaskConical,
 } from 'lucide-react';
 import { z } from 'zod';
 import { Brand, Eyebrow, Loading, ErrorBox } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 import { HealthSchema } from '@proofpatch/shared';
-const developerNav = [['', 'Repositories', FolderGit2]] as const;
+const developerNav = [
+  ['', 'Repositories', FolderGit2],
+  ['ml', 'ML Intelligence', BrainCircuit],
+  ['regression', 'Regression Verification', FlaskConical],
+] as const;
 const reviewerNav = [
   ['', 'Review Overview', LayoutDashboard],
   ['repositories', 'Repositories', FolderGit2],
@@ -29,6 +35,8 @@ const reviewerNav = [
   ['queue', 'Review Queue', ListChecks],
   ['findings', 'Security Findings', ShieldAlert],
   ['patches', 'Patch Inspection', GitPullRequest],
+  ['ml', 'ML Intelligence', BrainCircuit],
+  ['regression', 'Regression Verification', FlaskConical],
   ['evidence', 'Evidence Rail', Layers],
   ['decisions', 'Review Decisions', ClipboardCheck],
   ['settings', 'Settings', Settings],

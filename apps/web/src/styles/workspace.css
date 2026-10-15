@@ -1,4 +1,37 @@
 /* Technical workspaces. The public two-portal composition keeps its own styles. */
+.workspace-content .ml-code-label {
+  display: block;
+  margin-top: 20px;
+}
+.workspace-content .ml-source-input {
+  font:
+    13px/1.6 'Cascadia Code',
+    Consolas,
+    monospace;
+  resize: vertical;
+  min-height: 250px;
+  white-space: pre;
+  overflow: auto;
+}
+.ml-prediction {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #454d2d;
+  background: #141416;
+}
+.ml-prediction p {
+  font-size: 13px;
+}
+.ml-prediction code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.reference-logs {
+  margin-top: 24px;
+}
+.reference-logs .code-block {
+  font-size: 12px;
+}
 .workspace-content {
   --code-font: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
 }

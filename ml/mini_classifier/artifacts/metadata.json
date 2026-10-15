@@ -1,0 +1,15 @@
+{
+  "supported_cwes": [
+    "CWE-22",
+    "CWE-327",
+    "CWE-328",
+    "CWE-330",
+    "CWE-78",
+    "CWE-79",
+    "CWE-89"
+  ],
+  "negative_label": "BENCHMARK_NEGATIVE",
+  "language": "java",
+  "rejection_threshold": 0.35,
+  "dataset_commit": "0a3113b7054a56a072e694ab65a2f8cd7405aeb7"
+}

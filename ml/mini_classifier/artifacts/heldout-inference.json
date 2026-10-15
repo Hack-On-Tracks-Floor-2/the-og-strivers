@@ -1,0 +1,24 @@
+{
+  "example_id": "BenchmarkTest00005",
+  "split": "test",
+  "expected_label": "CWE-327",
+  "source_sha256": "c113ffc99359cc1f72e984d80d0ddea0e09ab846eaae7d058ed0537c0dd23648",
+  "prediction": {
+    "status": "predicted",
+    "predicted_category": "CWE-327",
+    "cwe": "CWE-327",
+    "probability": 0.9856365584438977,
+    "language": "java",
+    "supported_cwes": [
+      "CWE-22",
+      "CWE-327",
+      "CWE-328",
+      "CWE-330",
+      "CWE-78",
+      "CWE-79",
+      "CWE-89"
+    ],
+    "scope": "OWASP Benchmark Java only; not a production vulnerability detector",
+    "note": "Probability is not calibrated. BENCHMARK_NEGATIVE is not a general safety guarantee."
+  }
+}

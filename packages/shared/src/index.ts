@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export * from './intelligence.js';
 
 export const API_VERSION = 'v1' as const;
 export const Id = z.string().uuid();
