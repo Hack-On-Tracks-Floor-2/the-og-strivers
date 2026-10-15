@@ -11,7 +11,15 @@
 - A transactional review guard prevents approval without recorded passing evidence. Review approval cannot declare the entire run verified.
 - `.env`, database files and dependency/build outputs are ignored in Git. No AI keys are used by or exposed to the browser.
 
-## Hostile repository boundary — required for Phase 2
+## Phase 2 implementation status
+
+- **Clone** (`repositories/clone.ts`): GitHub API public/size check, shallow clone with `core.symlinks=false`, hooks/submodules/LFS disabled, no shell, 60 s timeout, file/size/symlink/special-file audit, `.git` removed, pinned `HEAD` SHA recorded. Partial workspaces are deleted on failure or cancellation.
+- **Sandbox** (`verification/docker.ts`, image `docker/runner`): `--network none`, `--read-only` root, uid 10001, `--cap-drop ALL`, `no-new-privileges`, PID/memory/CPU/nofile limits, a tmpfs work copy (no shared writable checkout), source mounted read-only, wall-clock timeout with `docker kill`, output capped. Docker's default seccomp profile applies. No host-execution fallback exists.
+- **Dependency stage**: the only step with network (`bridge`), with the same user/capability/resource limits. It writes to a per-workspace dependency folder that test runs mount read-only.
+- **AI**: see [AI_USAGE.md](AI_USAGE.md) (untrusted-data wrapping, secret redaction, token budget, schema-validated output, no tools).
+- **Reproduction semantics**: the generated security test must exit **1** (tests failed) on the original commit; the approval guard requires exit 1 for `reproduction` and exit 0 for every other stage.
+
+## Hostile repository boundary — requirements
 
 No repository cloning, source reads, patch application, child processes or untrusted test execution are implemented. The sandbox adapter always returns `not_configured`. Do not add a host-execution fallback.
 

@@ -6,7 +6,17 @@ import { API_VERSION } from '@proofpatch/shared';
 import type { Database } from './database/index.js';
 import { apiRouter } from './routes/index.js';
 import { HttpError } from './utils/errors.js';
-export async function createApp(db: Database, options: { origin: string; production?: boolean }) {
+import type { Pipeline } from './pipeline/orchestrator.js';
+export async function createApp(
+  db: Database,
+  options: { origin: string; production?: boolean; pipeline?: Pipeline },
+) {
+  // In development, 127.0.0.1 and localhost are the same machine: accept both spellings.
+  const allowed = new Set([options.origin]);
+  if (!options.production) {
+    allowed.add(options.origin.replace('://127.0.0.1', '://localhost'));
+    allowed.add(options.origin.replace('://localhost', '://127.0.0.1'));
+  }
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -17,11 +27,11 @@ export async function createApp(db: Database, options: { origin: string; product
   app.use(express.json({ limit: '32kb' }));
   app.use(cookieParser());
   app.use('/api', (req, _res, next) => {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('origin') !== options.origin)
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !allowed.has(req.get('origin') ?? ''))
       throw new HttpError(403, 'ORIGIN_REJECTED', 'Request origin is not allowed.');
     next();
   });
-  app.use('/api', await apiRouter(db, !!options.production));
+  app.use('/api', await apiRouter(db, !!options.production, options.pipeline));
   app.use((_req, _res) => {
     throw new HttpError(404, 'NOT_FOUND', 'API endpoint not found.');
   });

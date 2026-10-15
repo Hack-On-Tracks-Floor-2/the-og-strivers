@@ -15,11 +15,21 @@ export default defineConfig(({ command, mode }) => {
     env.REVIEWER_PASSWORD
       ? { email: env.REVIEWER_EMAIL, password: env.REVIEWER_PASSWORD }
       : null;
+  const developerDemo =
+    command === 'serve' &&
+    env.REVIEWER_DEMO_ENABLED === 'true' &&
+    env.DEVELOPER_DEMO_EMAIL &&
+    env.DEVELOPER_DEMO_PASSWORD
+      ? { email: env.DEVELOPER_DEMO_EMAIL, password: env.DEVELOPER_DEMO_PASSWORD }
+      : null;
 
   return {
     plugins: [react(), tailwind()],
     envDir: projectRoot,
-    define: { __REVIEWER_DEMO__: JSON.stringify(reviewerDemo) },
+    define: {
+      __REVIEWER_DEMO__: JSON.stringify(reviewerDemo),
+      __DEVELOPER_DEMO__: JSON.stringify(developerDemo),
+    },
     server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:3001' } },
   };
 });

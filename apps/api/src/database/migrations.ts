@@ -21,4 +21,13 @@ CREATE INDEX verifications_run ON verifications(run_id);
 CREATE INDEX events_run ON events(run_id);
 `,
   },
+  {
+    // Bounded execution evidence (logs, JUnit XML, diffs, generated security tests).
+    // The id is the content SHA-256: a stable identifier, not a cryptographic attestation.
+    version: 2,
+    sql: `
+CREATE TABLE artifacts (id TEXT PRIMARY KEY, run_id UUID NOT NULL REFERENCES runs(id), owner_id UUID NOT NULL REFERENCES users(id), document JSONB NOT NULL, content TEXT NOT NULL);
+CREATE INDEX artifacts_run ON artifacts(run_id);
+`,
+  },
 ];

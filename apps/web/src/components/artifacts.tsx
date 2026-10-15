@@ -11,7 +11,10 @@ export function FindingCard({ finding }: { finding: Finding }) {
       <h2>
         {finding.file}:{finding.startLine}–{finding.endLine}
       </h2>
-      <span className="mono muted">CONFIDENCE / {Math.round(finding.confidence * 100)}%</span>
+      <span className="mono muted">
+        {finding.cwe ?? 'CWE N/A'} · CONFIDENCE / {Math.round(finding.confidence * 100)}% · FOUND BY /{' '}
+        {finding.source === 'scanner+ai' ? 'SCANNER + AI' : finding.source.toUpperCase()}
+      </span>
       <h3>Root cause</h3>
       <p>{finding.rootCause}</p>
       <h3>Supporting evidence</h3>
@@ -29,18 +32,22 @@ export function FindingCard({ finding }: { finding: Finding }) {
   );
 }
 export function PatchViewer({ patch }: { patch: Patch }) {
-  const [tab, setTab] = useState<'diff' | 'original' | 'proposed'>('diff');
+  const [tab, setTab] = useState<'diff' | 'original' | 'proposed' | 'security'>('diff');
+  const tabs = (['diff', 'original', 'proposed', 'security'] as const).filter(
+    (value) => value !== 'security' || !!patch.securityTest,
+  );
   return (
     <article className="panel">
       <div className="panel-heading">
         <div>
           <Eyebrow>PATCH / {patch.id.slice(0, 8)}</Eyebrow>
           <h2>Proposed changes</h2>
+          <span className="mono muted">ATTEMPT / {patch.attempt}</span>
         </div>
         <Status value={patch.status} />
       </div>
       <div className="code-tabs">
-        {(['diff', 'original', 'proposed'] as const).map((value) => (
+        {tabs.map((value) => (
           <button
             key={value}
             className={tab === value ? 'active' : ''}
@@ -50,11 +57,22 @@ export function PatchViewer({ patch }: { patch: Patch }) {
               ? 'Unified diff'
               : value === 'original'
                 ? 'Original code'
-                : 'Proposed code'}
+                : value === 'proposed'
+                  ? 'Proposed code'
+                  : 'Exploit test'}
           </button>
         ))}
       </div>
-      {tab === 'diff' ? (
+      {patch.explanation && <p className="field-help">{patch.explanation}</p>}
+      {tab === 'security' && patch.securityTest ? (
+        <div>
+          <div className="file-path mono">{patch.securityTest.path}</div>
+          <p className="field-help">
+            Fails on the original code (vulnerability reproduced) and passes on the patch.
+          </p>
+          <pre className="code-block">{patch.securityTest.content}</pre>
+        </div>
+      ) : tab === 'diff' ? (
         <pre className="code-block">
           {patch.unifiedDiff.split('\n').map((line, i) => (
             <span
@@ -123,6 +141,13 @@ export function EvidenceTimeline({
           {item.verification && (
             <>
               <div className="mono">EXIT CODE / {item.verification.exitCode ?? 'NOT RECORDED'}</div>
+              {item.verification.tests && (
+                <div className="mono">
+                  TESTS / {item.verification.tests.passed} passed · {item.verification.tests.failed}{' '}
+                  failed · {item.verification.tests.errors} errors · {item.verification.tests.skipped}{' '}
+                  skipped ({item.verification.tests.total})
+                </div>
+              )}
               <pre className="code-block">{JSON.stringify(item.verification.command)}</pre>
             </>
           )}
@@ -133,7 +158,18 @@ export function EvidenceTimeline({
             {item.artifact && (
               <>
                 <br />
-                ARTIFACT / {item.artifact}
+                ARTIFACT /{' '}
+                {/^[0-9a-f]{40}$/.test(item.artifact) ? (
+                  <a
+                    className="lime-text"
+                    href={`/api/runs/${item.run}/artifacts/${item.artifact}`}
+                    download
+                  >
+                    {item.artifact.slice(0, 12)} ↓
+                  </a>
+                ) : (
+                  item.artifact
+                )}
               </>
             )}
           </code>

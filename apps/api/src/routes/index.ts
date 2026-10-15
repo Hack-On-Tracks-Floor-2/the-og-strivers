@@ -27,9 +27,10 @@ import {
 import { registerRepository, listRepositories } from '../repositories/service.js';
 import { createAnalysisRun } from '../scanners/service.js';
 import { HttpError } from '../utils/errors.js';
+import type { Pipeline } from '../pipeline/orchestrator.js';
 
 const reviewable = `EXISTS (SELECT 1 FROM patches p WHERE p.run_id=runs.id AND p.document->>'status' IN ('needs_review','approved','rejected'))`;
-export async function apiRouter(db: Database, production: boolean) {
+export async function apiRouter(db: Database, production: boolean, pipeline?: Pipeline) {
   const router = Router();
   const cookie = {
     httpOnly: true,
@@ -64,9 +65,17 @@ export async function apiRouter(db: Database, production: boolean) {
     if (!result.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Analysis run not found.');
     return result.rows[0].document;
   }
-  router.get('/health', (_req, res) =>
-    send(res, { status: 'ok', database: 'ready', analysis: 'not_configured' }),
-  );
+  router.get('/health', async (_req, res) => {
+    const status = pipeline ? await pipeline.status() : null;
+    send(res, {
+      status: 'ok',
+      database: 'ready',
+      analysis: status?.available ? 'available' : 'not_configured',
+      sandbox: status?.available ? 'docker' : 'not_configured',
+      ai: status?.ai ?? [],
+      ...(status?.reason ? { reason: status.reason } : {}),
+    });
+  });
   router.post('/auth/register', limiter, async (req, res) => {
     const user = await createUser(db, RegisterSchema.parse(req.body));
     res.cookie('pp_session', await createSession(db, user.id), cookie);
@@ -138,7 +147,13 @@ export async function apiRouter(db: Database, production: boolean) {
       currentUser(req).id,
     ]);
     if (!own.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Repository not found.');
-    const run = await createAnalysisRun(db, currentUser(req), repositoryId);
+    const status = pipeline ? await pipeline.status() : null;
+    const run = await createAnalysisRun(db, currentUser(req), repositoryId, !!status?.available);
+    if (status?.available) {
+      pipeline!.start(run);
+      send(res, run, 201);
+      return;
+    }
     // Job registration succeeds; execution capability explicitly remains unavailable.
     res
       .status(201)
@@ -148,9 +163,38 @@ export async function apiRouter(db: Database, production: boolean) {
         capability: {
           code: 'CAPABILITY_UNAVAILABLE',
           state: 'not_configured',
-          message: 'Agent integration pending. No analysis has been executed.',
+          message: status?.reason ?? 'Agent integration pending. No analysis has been executed.',
         },
       });
+  });
+  router.post('/runs/:id/cancel', requireRole('developer'), async (req, res) => {
+    const run = await accessibleRun(req);
+    send(res, { cancelled: pipeline?.cancel(run.id) ?? false });
+  });
+  router.get('/runs/:id/artifacts', async (req, res) => {
+    const run = await accessibleRun(req);
+    const result = await db.query<{ document: unknown }>(
+      `SELECT document FROM artifacts WHERE run_id=$1 ORDER BY document->>'createdAt' ASC`,
+      [run.id],
+    );
+    send(
+      res,
+      result.rows.map((r) => r.document),
+    );
+  });
+  router.get('/runs/:id/artifacts/:artifactId', async (req, res) => {
+    const run = await accessibleRun(req);
+    const artifactId = z.string().regex(/^[0-9a-f]{40}$/).parse(req.params.artifactId);
+    const result = await db.query<{ content: string; document: { kind: string } }>(
+      'SELECT content,document FROM artifacts WHERE id=$1 AND run_id=$2',
+      [artifactId, run.id],
+    );
+    if (!result.rows.length) throw new HttpError(404, 'NOT_FOUND', 'Artifact not found.');
+    const row = result.rows[0];
+    res
+      .type('text/plain')
+      .setHeader('Content-Disposition', `attachment; filename="${row.document.kind}-${artifactId.slice(0, 12)}.txt"`);
+    res.send(row.content);
   });
   router.get('/runs/:id', async (req, res) => send(res, await accessibleRun(req)));
   for (const [path, table] of Object.entries({
@@ -252,10 +296,12 @@ export async function apiRouter(db: Database, production: boolean) {
               .map((r) => r.document)
               .filter((v) => v.stage === stage)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+            // Reproduction proves the vulnerability: the security test must FAIL on the
+            // original code (pytest exit 1). Every other stage must exit 0.
             return (
               record &&
               record.status === 'passed' &&
-              record.exitCode === 0 &&
+              record.exitCode === (stage === 'reproduction' ? 1 : 0) &&
               record.logs.trim() &&
               record.artifactId &&
               record.completedAt

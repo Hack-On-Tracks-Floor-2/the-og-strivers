@@ -101,8 +101,12 @@ export const FindingSchema = z.object({
   rootCause: z.string(),
   evidence: z.array(z.string()),
   recommendation: z.string(),
+  // CWE identifier (e.g. "CWE-89") and which stage of the search funnel produced it.
+  cwe: z.string().nullable().default(null),
+  source: z.enum(['scanner', 'ai', 'scanner+ai']).default('ai'),
   createdAt: Timestamp,
 });
+export const SecurityTestSchema = z.object({ path: z.string(), content: z.string() });
 export const PatchSchema = z.object({
   id: Id,
   runId: Id,
@@ -111,8 +115,24 @@ export const PatchSchema = z.object({
   status: z.enum(['proposed', 'applied', 'needs_review', 'approved', 'rejected']),
   files: z.array(z.object({ path: z.string(), original: z.string(), proposed: z.string() })),
   unifiedDiff: z.string(),
+  // Generated exploit test: must fail on the original code and pass on the patch.
+  securityTest: SecurityTestSchema.nullable().default(null),
+  attempt: z.number().int().min(1).default(1),
+  explanation: z.string().default(''),
   createdAt: Timestamp,
   updatedAt: Timestamp,
+});
+export const TestCaseSchema = z.object({
+  id: z.string(),
+  outcome: z.enum(['passed', 'failed', 'error', 'skipped']),
+});
+export const TestSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  passed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  cases: z.array(TestCaseSchema),
 });
 export const VerificationRunSchema = z.object({
   id: Id,
@@ -132,6 +152,8 @@ export const VerificationRunSchema = z.object({
   command: z.array(z.string()),
   logs: z.string(),
   artifactId: z.string().nullable(),
+  // Parsed per-test results (pytest JUnit XML) when the stage ran a test suite.
+  tests: TestSummarySchema.nullable().default(null),
   createdAt: Timestamp,
   completedAt: Timestamp.nullable(),
 });
@@ -144,6 +166,8 @@ export const RunEventSchema = z.object({
     'capability_unavailable',
     'stage_started',
     'stage_completed',
+    'stage_failed',
+    'ai_usage',
     'error',
     'review_decision',
   ]),
@@ -176,7 +200,7 @@ export const OverviewSchema = z.object({
 });
 export const CapabilitySchema = z.object({
   code: z.literal('CAPABILITY_UNAVAILABLE'),
-  state: z.enum(['not_configured', 'not_implemented']),
+  state: z.enum(['not_configured', 'not_implemented', 'failed']),
   message: z.string(),
 });
 export const ApiErrorSchema = z.object({
@@ -196,3 +220,22 @@ export type RunEvent = z.infer<typeof RunEventSchema>;
 export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>;
 export type Overview = z.infer<typeof OverviewSchema>;
 export type Unavailable = z.infer<typeof CapabilitySchema>;
+export type TestSummary = z.infer<typeof TestSummarySchema>;
+export type SecurityTest = z.infer<typeof SecurityTestSchema>;
+export const ArtifactSchema = z.object({
+  id: z.string(),
+  runId: Id,
+  kind: z.enum(['log', 'junit', 'diff', 'security_test', 'report']),
+  sha256: z.string(),
+  bytes: z.number().int().nonnegative(),
+  createdAt: Timestamp,
+});
+export type Artifact = z.infer<typeof ArtifactSchema>;
+export const HealthSchema = z.object({
+  status: z.literal('ok'),
+  database: z.literal('ready'),
+  analysis: z.enum(['available', 'not_configured']),
+  sandbox: z.enum(['docker', 'not_configured']).optional(),
+  ai: z.array(z.string()).optional(),
+  reason: z.string().optional(),
+});
