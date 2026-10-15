@@ -1,0 +1,17 @@
+[
+  {
+    "command": "node ../../node_modules/typescript/bin/tsc --noEmit -p apps/api/tsconfig.json",
+    "exitCode": 0,
+    "output": ""
+  },
+  {
+    "command": "git apply --check --directory=evidence/regression-demo/1f862e38-3746-48ee-98ef-a73b1ff3d217/vulnerable C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217/patch.diff",
+    "exitCode": 0,
+    "output": ""
+  },
+  {
+    "command": "git diff --check",
+    "exitCode": 0,
+    "output": ""
+  }
+]

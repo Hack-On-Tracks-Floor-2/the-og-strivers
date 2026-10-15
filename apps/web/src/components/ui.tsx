@@ -53,7 +53,7 @@ export function EmptyState({
       <span className="empty-icon">
         <Terminal size={24} />
       </span>
-      <Eyebrow>AWAITING YOUR FIRST SIGNAL</Eyebrow>
+      <Eyebrow>WORKSPACE STATUS</Eyebrow>
       <h2>{title}</h2>
       <p>{description}</p>
       {action}
@@ -61,10 +61,42 @@ export function EmptyState({
   );
 }
 export function Status({ value }: { value: string }) {
+  const labels: Record<string, string> = {
+    checks_passed: 'Checks passed',
+    not_available: 'Not available',
+    needs_review: 'Needs review',
+    verified_checks: 'Verified by checks',
+    under_verification: 'Under verification',
+    patch_proposed: 'Patch proposed',
+    failed_verification: 'Verification failed',
+    info: 'Informational',
+    not_configured: 'Not configured',
+    passed: 'Passed',
+    failed: 'Failed',
+    running: 'Running',
+    pending: 'Pending',
+    skipped: 'Skipped',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    proposed: 'Proposed',
+    applied: 'Applied',
+    critical: 'Critical',
+    high: 'High',
+    medium: 'Medium',
+    low: 'Low',
+    received: 'Received',
+    queued: 'Queued',
+    mapping: 'Mapping',
+    analyzing: 'Analyzing',
+    patching: 'Generating patch',
+    verifying: 'Verifying',
+    verified: 'Verified',
+    error: 'Error',
+  };
   return (
     <span className={`status status-${value}`}>
       <i />
-      {value.replaceAll('_', ' ')}
+      {labels[value] ?? value.replaceAll('_', ' ')}
     </span>
   );
 }

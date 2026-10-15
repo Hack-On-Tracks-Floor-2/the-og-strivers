@@ -1,0 +1,16 @@
+{
+  "command": "node ../../node_modules/vitest/vitest.mjs run",
+  "initialExitCode": 1,
+  "initialResults": {
+    "tests/pipeline/pipeline.test.ts": { "passed": 14, "failed": 0 },
+    "tests/api.test.ts": { "passed": 19, "failed": 0 },
+    "tests/contracts.test.ts": { "passed": 13, "failed": 0 },
+    "tests/regression/regression.test.ts": { "passed": 0, "failed": 1, "reason": "30-second test timeout while opening the real PGlite database" }
+  },
+  "resolution": "Increased only the real integration test timeout to 90 seconds; reran that test successfully in 20.52 seconds. No assertions were removed or weakened.",
+  "rerunCommand": "node ../../node_modules/vitest/vitest.mjs run tests/regression/regression.test.ts",
+  "rerunExitCode": 0,
+  "rerunLog": "backend-integration.txt",
+  "finalCoverage": "46 existing backend tests passed in the initial suite, plus 1 new real execution/API integration test passed on its focused rerun. The whole suite was not repeated after the timeout adjustment.",
+  "environmentNote": "An earlier sandboxed Vitest attempt exited 1 with EPERM reading its installed dependency and collected no tests. The executed test results above came from the permitted unsandboxed runs."
+}
