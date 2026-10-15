@@ -1,0 +1,49 @@
+{
+  "stage": "regression",
+  "executable": "C:\\Program Files\\nodejs\\node.exe",
+  "argv": [
+    "--test",
+    "--test-reporter=tap",
+    "--test-reporter=junit",
+    "--test-reporter-destination=stdout",
+    "--test-reporter-destination=C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\regression.junit.xml",
+    "test/functional.test.cjs"
+  ],
+  "cwd": "C:\\Users\\Aadarsh Tiwari\\Downloads\\r2Agnel\\.data\\regression-engine\\evidence\\regression-demo\\1f862e38-3746-48ee-98ef-a73b1ff3d217\\patched",
+  "startedAt": "2026-10-15T13:20:35.060Z",
+  "durationMs": 323,
+  "exitCode": 0,
+  "signal": null,
+  "error": null,
+  "stdout": "TAP version 13\n# Subtest: reads an existing report\nok 1 - reads an existing report\n  ---\n  duration_ms: 7.0569\n  type: 'test'\n  ...\n# Subtest: reads nested reports\nok 2 - reads nested reports\n  ---\n  duration_ms: 8.2297\n  type: 'test'\n  ...\n# Subtest: supports spaces in report names\nok 3 - supports spaces in report names\n  ---\n  duration_ms: 7.1521\n  type: 'test'\n  ...\n# Subtest: preserves empty report contents\nok 4 - preserves empty report contents\n  ---\n  duration_ms: 5.1625\n  type: 'test'\n  ...\n# Subtest: preserves missing-file errors\nok 5 - preserves missing-file errors\n  ---\n  duration_ms: 6.2736\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 198.0246\n",
+  "stderr": "",
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "id": "test::reads an existing report",
+        "outcome": "passed"
+      },
+      {
+        "id": "test::reads nested reports",
+        "outcome": "passed"
+      },
+      {
+        "id": "test::supports spaces in report names",
+        "outcome": "passed"
+      },
+      {
+        "id": "test::preserves empty report contents",
+        "outcome": "passed"
+      },
+      {
+        "id": "test::preserves missing-file errors",
+        "outcome": "passed"
+      }
+    ]
+  }
+}

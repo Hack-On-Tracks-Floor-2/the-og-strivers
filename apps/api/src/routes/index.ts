@@ -28,6 +28,9 @@ import { registerRepository, listRepositories } from '../repositories/service.js
 import { createAnalysisRun } from '../scanners/service.js';
 import { HttpError } from '../utils/errors.js';
 import type { Pipeline } from '../pipeline/orchestrator.js';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { defaultRegressionEvidence } from '../verification/regression-demo.js';
 
 const reviewable = `EXISTS (SELECT 1 FROM patches p WHERE p.run_id=runs.id AND p.document->>'status' IN ('needs_review','approved','rejected'))`;
 export async function apiRouter(db: Database, production: boolean, pipeline?: Pipeline) {
@@ -110,6 +113,14 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     send(res, { loggedOut: true });
   });
   router.use(authenticate(db));
+  // Read-only evidence for the trusted local demo; never launches caller-supplied code.
+  router.get('/regression-demo/evidence', async (_req, res) => {
+    const text = await readFile(join(defaultRegressionEvidence(), 'latest.json'), 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new HttpError(404, 'EVIDENCE_NOT_FOUND', 'Run npm run demo:regression first.');
+      throw error;
+    });
+    send(res, JSON.parse(text));
+  });
   router.get('/auth/me', (req, res) => send(res, currentUser(req)));
   router.get('/repositories', requireRole('developer'), async (req, res) =>
     send(res, await listRepositories(db, currentUser(req))),

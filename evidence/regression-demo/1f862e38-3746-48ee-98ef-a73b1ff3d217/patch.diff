@@ -1,0 +1,19 @@
+--- a/src/reports.cjs
++++ b/src/reports.cjs
+@@ -3,7 +3,15 @@
+ 
+ // Deliberately vulnerable, local demonstration fixture. Never deploy this module.
+ function readReport(root, name) {
+-  return readFileSync(join(root, name), 'utf8');
++  const { realpathSync } = require('node:fs');
++  const { relative, isAbsolute, sep } = require('node:path');
++  const base = realpathSync(root);
++  const target = realpathSync(join(base, name));
++  const within = relative(base, target);
++  if (within === '..' || within.startsWith('..' + sep) || isAbsolute(within)) {
++    throw Object.assign(new Error('Report path escapes its root'), { code: 'EACCES' });
++  }
++  return readFileSync(target, 'utf8');
+ }
+ 
+ module.exports = { readReport };

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="reads an existing report" time="0.001924" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\functional.test.cjs"/>
+	<testcase name="reads nested reports" time="0.002077" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\functional.test.cjs"/>
+	<testcase name="supports spaces in report names" time="0.001278" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\functional.test.cjs"/>
+	<testcase name="preserves empty report contents" time="0.000829" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\functional.test.cjs"/>
+	<testcase name="preserves missing-file errors" time="0.001113" classname="test" file="C:\Users\Aadarsh Tiwari\Downloads\r2Agnel\.data\regression-engine\evidence\regression-demo\1f862e38-3746-48ee-98ef-a73b1ff3d217\vulnerable\test\functional.test.cjs"/>
+	<!-- tests 5 -->
+	<!-- suites 0 -->
+	<!-- pass 5 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 162.2457 -->
+</testsuites>
