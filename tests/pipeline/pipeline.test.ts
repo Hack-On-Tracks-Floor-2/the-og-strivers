@@ -365,6 +365,28 @@ password = "hunter2-very-secret"` },
     expect(result.usage.provider).toBe('Groq key 2');
     expect(used).toEqual(['Bearer q1', 'Bearer q2']); // no 60 s wait before switching keys
   });
+  it('waits and goes round all keys again when every key is busy, instead of stopping the run', async () => {
+    let calls = 0;
+    const ai = createAiClient({ GROQ_API_KEY: 'q1', GROQ_API_KEY_2: 'q2', AI_RETRY_DELAY_MS: '0' }, {
+      fetchImpl: (async () => {
+        calls++;
+        return calls <= 3
+          ? new Response(JSON.stringify({ error: { code: 'rate_limit_exceeded', message: 'Rate limit reached' } }), { status: 429 })
+          : groqOk('{"a":1}');
+      }) as typeof fetch,
+    })!;
+    const result = await ai.completeJSON<{ a: number }>(req, new TokenBudget(10_000), new AbortController().signal);
+    expect(result.value.a).toBe(1);
+    expect(calls).toBe(4); // round 1: key 1, key 2 + its retry all 429; round 2: key 1 succeeds
+  });
+  it('reports the provider reason and gives up after the retry rounds', async () => {
+    const ai = createAiClient({ GROQ_API_KEY: 'q', AI_RETRY_DELAY_MS: '0', AI_RETRY_ROUNDS: '1' }, {
+      fetchImpl: (async () => new Response(JSON.stringify({ error: { code: 'json_validate_failed', message: 'Failed to generate JSON' } }), { status: 400 })) as typeof fetch,
+    })!;
+    await expect(ai.completeJSON(req, new TokenBudget(10_000), new AbortController().signal)).rejects.toThrow(
+      /Groq HTTP 400 \(json_validate_failed: Failed to generate JSON\).*Groq HTTP 400 .*\(retry 1\)/,
+    );
+  });
   it('refuses work that would exceed the run budget', async () => {
     const ai = createAiClient({ GEMINI_API_KEY: 'g' }, { fetchImpl: (async () => ok('{}')) as typeof fetch })!;
     await expect(ai.completeJSON(req, new TokenBudget(50), new AbortController().signal)).rejects.toThrow(/budget/i);

@@ -77,6 +77,19 @@ interface Provider {
   call(request: AiRequest, signal: AbortSignal): Promise<{ text: string; inputTokens?: number; outputTokens?: number }>;
 }
 
+/** "HTTP 400 (provider's reason)", shortened. Provider error bodies never contain our key. */
+async function httpError(res: Response) {
+  let detail = '';
+  try {
+    const body = (await res.json()) as { error?: { message?: string; code?: string } | string };
+    const error = body.error;
+    detail = typeof error === 'string' ? error : [error?.code, error?.message].filter(Boolean).join(': ');
+  } catch {
+    // no JSON body
+  }
+  return `HTTP ${res.status}${detail ? ` (${detail.replace(/\s+/g, ' ').slice(0, 140)})` : ''}`;
+}
+
 function wrap(request: AiRequest) {
   return `${request.instructions}\n\n<<<DATA\n${request.data}\nDATA>>>`;
 }
@@ -105,7 +118,7 @@ function gemini(key: string, model: string, fetchImpl: typeof fetch): Provider {
           }),
         },
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await httpError(res));
       const body = (await res.json()) as {
         candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
@@ -154,7 +167,7 @@ function groq(key: string, model: string, perMinuteBudget: number, fetchImpl: ty
           ],
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await httpError(res));
       const body = (await res.json()) as {
         choices?: { finish_reason?: string; message?: { content?: string } }[];
         usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -220,46 +233,59 @@ export function createAiClient(
       if (hit) return { value: JSON.parse(redaction.restore(hit.text)) as T, usage: { ...hit.usage, cached: true } };
       budget.reserve(promptTokens + request.maxOutputTokens);
       const attempts: { provider: string; reason: string }[] = [];
-      for (const provider of providers) {
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        signal.addEventListener('abort', abort, { once: true });
-        const timer = setTimeout(abort, timeoutMs);
-        try {
-          let out: Awaited<ReturnType<Provider['call']>>;
-          try {
-            out = await provider.call(request, controller.signal);
-          } catch (first) {
-            // Rate limit / overload: switch to the next key at once; the last key waits once and retries.
-            if (!(first instanceof Error) || !/HTTP (429|503)/.test(first.message) || signal.aborted || provider.nextKey) throw first;
-            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-            out = await provider.call(request, controller.signal);
-          }
-          const value = JSON.parse(redaction.restore(out.text)) as T;
-          const usage: AiUsage = {
-            provider: provider.label,
-            model: provider.model,
-            inputTokens: out.inputTokens ?? promptTokens,
-            outputTokens: out.outputTokens ?? estimateTokens(out.text),
-            cached: false,
-            redacted: redaction.count,
-          };
-          budget.charge(usage.inputTokens + usage.outputTokens);
-          cache.set(key, { text: out.text, usage });
-          return { value, usage };
-        } catch (error) {
+      // Rate limits and overloads are short-lived (Groq resets every minute): when every key fails, wait and go
+      // round all keys again instead of stopping the run. AI_RETRY_ROUNDS extra rounds (default 2).
+      const rounds = 1 + (Number(env.AI_RETRY_ROUNDS) >= 0 && env.AI_RETRY_ROUNDS !== undefined ? Number(env.AI_RETRY_ROUNDS) : 2);
+      for (let round = 0; round < rounds; round++) {
+        if (round > 0) {
+          await new Promise<void>((resolve) => {
+            const done = () => (clearTimeout(timer), signal.removeEventListener('abort', done), resolve());
+            const timer = setTimeout(done, retryDelayMs * 2 * round);
+            signal.addEventListener('abort', done, { once: true });
+          });
           if (signal.aborted) throw new AiError('Run cancelled.', attempts);
-          const reason = controller.signal.aborted
-            ? `timed out after ${Math.round(timeoutMs / 1000)} s`
-            : error instanceof SyntaxError
-              ? 'returned invalid JSON'
-              : error instanceof Error
-                ? error.message
-                : 'failed';
-          attempts.push({ provider: provider.label, reason });
-        } finally {
-          clearTimeout(timer);
-          signal.removeEventListener('abort', abort);
+        }
+        for (const provider of providers) {
+          const controller = new AbortController();
+          const abort = () => controller.abort();
+          signal.addEventListener('abort', abort, { once: true });
+          const timer = setTimeout(abort, timeoutMs);
+          try {
+            let out: Awaited<ReturnType<Provider['call']>>;
+            try {
+              out = await provider.call(request, controller.signal);
+            } catch (first) {
+              // Rate limit / overload: switch to the next key at once; the last key waits once and retries.
+              if (!(first instanceof Error) || !/HTTP (429|503)/.test(first.message) || signal.aborted || provider.nextKey) throw first;
+              await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+              out = await provider.call(request, controller.signal);
+            }
+            const value = JSON.parse(redaction.restore(out.text)) as T;
+            const usage: AiUsage = {
+              provider: provider.label,
+              model: provider.model,
+              inputTokens: out.inputTokens ?? promptTokens,
+              outputTokens: out.outputTokens ?? estimateTokens(out.text),
+              cached: false,
+              redacted: redaction.count,
+            };
+            budget.charge(usage.inputTokens + usage.outputTokens);
+            cache.set(key, { text: out.text, usage });
+            return { value, usage };
+          } catch (error) {
+            if (signal.aborted) throw new AiError('Run cancelled.', attempts);
+            const reason = controller.signal.aborted
+              ? `timed out after ${Math.round(timeoutMs / 1000)} s`
+              : error instanceof SyntaxError
+                ? 'returned invalid JSON'
+                : error instanceof Error
+                  ? error.message
+                  : 'failed';
+            attempts.push({ provider: provider.label, reason: round ? `${reason} (retry ${round})` : reason });
+          } finally {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', abort);
+          }
         }
       }
       throw new AiError(

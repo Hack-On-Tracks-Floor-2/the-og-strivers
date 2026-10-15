@@ -304,8 +304,9 @@ export function ArtifactsPage({
                   retained for context.
                 </p>
               )}
-              {data.events.length || evidence.length ? (
-                <EvidenceTimeline events={data.events} verification={evidence} />
+              {/* Regression Verification (embedded) shows executed checks only; run activity stays on the Evidence Rail. */}
+              {(embedded ? 0 : data.events.length) || evidence.length ? (
+                <EvidenceTimeline events={embedded ? [] : data.events} verification={evidence} />
               ) : (
                 <section className="panel">
                   <EmptyState title={copy.empty} description={copy.body} />
