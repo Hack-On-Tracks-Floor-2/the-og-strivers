@@ -61,6 +61,7 @@ export const KOTLIN_SINKS = JVM_SINKS('kt');
 
 export const CSHARP_SINKS: SinkRule[] = [
   r('cs-sql', 'CWE-89', 'SQL injection', 9, /(new\s+SqlCommand|ExecuteSqlRaw|FromSqlRaw|ExecuteSqlCommand|SqlQuery)\s*\(\s*(\$"|"[^"]*"\s*\+|string\.Format)/),
+  r('cs-sql-build', 'CWE-89', 'SQL injection', 7, /"\s*(SELECT|INSERT|UPDATE|DELETE)\b[^"]*"\s*\+|\$"\s*(SELECT|INSERT|UPDATE|DELETE)\b[^"]*\{/i),
   r('cs-cmd', 'CWE-78', 'Command injection', 7, /Process\.Start\s*\(|new\s+ProcessStartInfo\s*\(/),
   r('cs-path', 'CWE-22', 'Path traversal', 6, /(File\.(ReadAllText|ReadAllBytes|Open|OpenRead|WriteAllText|Delete)|Path\.Combine|PhysicalFile)\s*\([^)]*(Request|\bname\b|\bfile\w*|\bpath\b)/i),
   r('cs-deserialize', 'CWE-502', 'Unsafe deserialization', 8, /BinaryFormatter|TypeNameHandling\.(All|Auto|Objects)|LosFormatter|NetDataContractSerializer|SoapFormatter/),

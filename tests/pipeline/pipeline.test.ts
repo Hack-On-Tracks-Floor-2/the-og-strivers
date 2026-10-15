@@ -147,9 +147,40 @@ describe('more languages: detection and toolchains', () => {
     expect(await detectToolchain(dir, map(['PHP']))).toMatchObject({ language: 'php', runtime: 'php', framework: 'phpunit' });
     await writeFile(join(dir, 'package.json'), JSON.stringify({ devDependencies: { vitest: '^2' } }));
     expect(await detectToolchain(dir, map(['TypeScript']))).toMatchObject({ language: 'typescript', runtime: 'node', framework: 'vitest' });
+    // Without their build files these are scanned only; C and C++ are always detection-only.
     for (const lang of ['Java', 'Kotlin', 'C#', 'Ruby', 'Rust', 'C', 'C++'])
       expect(await detectToolchain(dir, map([lang]))).toMatchObject({ detectOnly: true });
     expect(await detectToolchain(dir, map(['Haskell']))).toHaveProperty('unsupported');
+    // With their build files they get full proofs.
+    await writeFile(join(dir, 'pom.xml'), '<project><dependencies><dependency><artifactId>junit-jupiter</artifactId></dependency></dependencies></project>');
+    const java = await detectToolchain(dir, map(['Java']));
+    expect(java).toMatchObject({ runtime: 'java', label: 'Java · Maven + JUnit 5' });
+    if (!('only' in java)) throw new Error('java');
+    expect(java.securityTestPath('src/main/java/com/a/b/X.java', 'x')).toBe('src/test/java/com/a/b/ProofPatchSecurityTest.java');
+    await mkdir(join(dir, 'App.Tests'), { recursive: true });
+    await writeFile(join(dir, 'App.Tests', 'App.Tests.csproj'), '<Project><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit" /></ItemGroup></Project>');
+    const cs = await detectToolchain(dir, map(['C#']));
+    expect(cs).toMatchObject({ runtime: 'dotnet', label: 'C# · dotnet test (xunit)' });
+    if (!('only' in cs)) throw new Error('cs');
+    expect(cs.securityTestPath('src/X.cs', 'x')).toBe('App.Tests/ProofPatchSecurityTests.cs');
+    await writeFile(join(dir, 'Gemfile'), 'gem "rspec"\n');
+    expect(await detectToolchain(dir, map(['Ruby']))).toMatchObject({ runtime: 'ruby', framework: 'rspec' });
+    await writeFile(join(dir, 'Cargo.toml'), '[package]\nname = "my-crate"\n');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'lib.rs'), '');
+    const rust = await detectToolchain(dir, map(['Rust']));
+    expect(rust).toMatchObject({ runtime: 'rust', framework: 'cargo test' });
+    if (!('only' in rust)) throw new Error('rust');
+    expect(rust.testGuidance).toContain('use my_crate::');
+    expect(await detectToolchain(dir, map(['C']))).toMatchObject({ detectOnly: true });
+    // C/C++: CTest (or a "make test" target) gives full proofs; the attack test is a standalone ASan program.
+    await writeFile(join(dir, 'CMakeLists.txt'), 'project(x C)\nenable_testing()\nadd_test(NAME a COMMAND a)\n');
+    const c = await detectToolchain(dir, map(['C']));
+    expect(c).toMatchObject({ runtime: 'c', framework: 'ctest', label: 'C · CMake + CTest + ASan' });
+    if (!('only' in c)) throw new Error('c');
+    expect(c.securityTestPath('src/parser.c', 'x')).toBe('proofpatch_security/proofpatch_security.c');
+    expect(c.only('proofpatch_security/proofpatch_security.c')).toEqual(['c-security-test', 'proofpatch_security/proofpatch_security.c']);
+    expect(await detectToolchain(dir, map(['C++']))).toMatchObject({ language: 'cpp', label: 'C++ · CMake + CTest + ASan' });
     await rm(dir, { recursive: true, force: true });
   });
 });
@@ -208,6 +239,10 @@ describe('JUnit parsing and the regression gate', () => {
   it('counts outcomes', () => {
     const s = parseJUnit(xml([['a', 'passed'], ['b', 'failed'], ['c', 'skipped'], ['d', 'error']]));
     expect([s.total, s.passed, s.failed, s.skipped, s.errors]).toEqual([4, 1, 1, 1, 1]);
+  });
+  it('reads .NET TRX results', () => {
+    const trx = '<TestRun><Results><UnitTestResult testName="A.Ok" outcome="Passed" /><UnitTestResult testName="A.Bad" outcome="Failed"></UnitTestResult><UnitTestResult testName="A.Skip" outcome="NotExecuted" /></Results></TestRun>';
+    expect(parseJUnit(trx)).toMatchObject({ total: 3, passed: 1, failed: 1, skipped: 1 });
   });
   it('fails only when a previously passing test stops passing', () => {
     const before = parseJUnit(xml([['a', 'passed'], ['b', 'failed']]));

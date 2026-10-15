@@ -13,6 +13,11 @@ export interface DockerOptions {
   nodeImage?: string;
   goImage?: string;
   phpImage?: string;
+  javaImage?: string;
+  dotnetImage?: string;
+  rubyImage?: string;
+  rustImage?: string;
+  cImage?: string;
   workspacePath: (id: string) => string;
   scratchRoot: string; // per-execution output folders and dependency folders
   docker?: string;
@@ -107,6 +112,11 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       node: this.options.nodeImage ?? 'proofpatch-runner:node22',
       go: this.options.goImage ?? 'proofpatch-runner:go122',
       php: this.options.phpImage ?? 'proofpatch-runner:php83',
+      java: this.options.javaImage ?? 'proofpatch-runner:java21',
+      dotnet: this.options.dotnetImage ?? 'proofpatch-runner:dotnet8',
+      ruby: this.options.rubyImage ?? 'proofpatch-runner:ruby33',
+      rust: this.options.rustImage ?? 'proofpatch-runner:rust180',
+      c: this.options.cImage ?? 'proofpatch-runner:c13',
     }[runtime];
   }
 
@@ -153,6 +163,48 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       'timeout 90 composer audit --format=json --no-interaction > /deps/audit.json 2>/dev/null || true',
       'echo prepared',
     ].join('\n');
+    // Maven: download every dependency and plugin, then compile and resolve the Surefire runner with a
+    // test filter that matches nothing, so no repository test code runs while the network is on.
+    const javaScript = [
+      'set -e',
+      'mvn -B -q -Dmaven.repo.local=/deps/m2 dependency:go-offline || true',
+      // Surefire downloads its JUnit provider only when it runs a test: run an empty probe test that
+      // exists only in this private copy (never the repository's own tests).
+      'mkdir -p src/test/java',
+      'if grep -q "junit-jupiter\\|junit-bom" pom.xml || ! grep -q "<artifactId>junit</artifactId>" pom.xml; then',
+      '  printf "public class ProofPatchProbeTest { @org.junit.jupiter.api.Test void probe() {} }\\n" > src/test/java/ProofPatchProbeTest.java',
+      'else',
+      '  printf "public class ProofPatchProbeTest { @org.junit.Test public void probe() {} }\\n" > src/test/java/ProofPatchProbeTest.java',
+      'fi',
+      'mvn -B -q -Dmaven.repo.local=/deps/m2 test -Dtest=ProofPatchProbeTest -Dsurefire.failIfNoSpecifiedTests=false',
+      'echo prepared',
+    ].join('\n');
+    // NuGet packages for every project land in /deps/nuget (NUGET_PACKAGES); tests restore offline from it.
+    const dotnetScript = [
+      'set -e',
+      'for p in $(find . -name "*.csproj" -not -path "*/bin/*" -not -path "*/obj/*"); do dotnet restore "$p" --packages /deps/nuget --verbosity quiet; done',
+      'echo prepared',
+    ].join('\n');
+    // Bundler installs into /deps/bundle; the resolved lockfile is kept so tests resolve offline.
+    const rubyScript = [
+      'set -e',
+      'BUNDLE_PATH=/deps/bundle bundle install --jobs 4 --quiet',
+      'cp Gemfile.lock /deps/Gemfile.lock',
+      'echo prepared',
+    ].join('\n');
+    // Cargo registry and crates go to /deps/cargo; the lockfile is kept for offline builds.
+    const rustScript = [
+      'set -e',
+      'CARGO_HOME=/deps/cargo CARGO_NET_OFFLINE=false cargo fetch',
+      'cp Cargo.lock /deps/Cargo.lock',
+      'echo prepared',
+    ].join('\n');
+    // C/C++ has no package manager: only CMake FetchContent sources are downloaded (configure step, no build).
+    const cScript = [
+      'set -e',
+      'if [ -f CMakeLists.txt ]; then cmake -S . -B /tmp/prepare-build -DFETCHCONTENT_BASE_DIR=/deps/fetch > /dev/null; fi',
+      'echo prepared',
+    ].join('\n');
     const pythonScript = [
       'set -e',
       'for f in requirements.txt requirements-dev.txt requirements-test.txt test-requirements.txt requirements/test.txt requirements/dev.txt; do',
@@ -171,7 +223,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         ...hardeningArgs(1536, 2),
         ...bind(this.options.workspacePath(workspace.id), '/src', true),
         ...bind(deps, '/deps', false),
-        this.imageFor(runtime), 'sh', '-c', { python: pythonScript, node: nodeScript, go: goScript, php: phpScript }[runtime],
+        this.imageFor(runtime), 'sh', '-c', { python: pythonScript, node: nodeScript, go: goScript, php: phpScript, java: javaScript, dotnet: dotnetScript, ruby: rubyScript, rust: rustScript, c: cScript }[runtime],
       ],
       300_000,
       200_000,

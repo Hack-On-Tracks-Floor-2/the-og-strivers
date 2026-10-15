@@ -120,12 +120,13 @@ export async function generatePatch(input: {
   const name = (value.securityTest?.filename ?? '').split(/[\\/]/).pop()!.replace(/[^A-Za-z0-9_.]/g, '_');
   const filename = tc.securityTestName.test(name) ? name : tc.defaultSecurityTestName;
   const content = value.securityTest?.content ?? '';
-  const hasTest = {
+  const byRuntime: Partial<Record<Toolchain['runtime'], RegExp>> = {
     python: /def test_/,
     node: /\b(test|it)\s*\(/,
     go: /func\s+TestProofPatch\w*\s*\(\s*\w+\s+\*testing\.T\s*\)/,
     php: /function\s+test\w*\s*\(/,
-  }[tc.runtime];
+  };
+  const hasTest = tc.testPattern ?? byRuntime[tc.runtime] ?? /./;
   if (!hasTest.test(content))
     throw new EditError(`The security test contains no ${tc.framework} test.`);
   return {
