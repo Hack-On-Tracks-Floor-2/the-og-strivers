@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { Brand, Eyebrow, Loading, ErrorBox } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
+import { HealthSchema } from '@proofpatch/shared';
 const developerNav = [
   ['', 'Overview', LayoutDashboard],
   ['repositories', 'Repositories', FolderGit2],
@@ -41,6 +42,12 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
   const auth = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [pipelineReady, setPipelineReady] = useState(false);
+  useEffect(() => {
+    api('/health', HealthSchema)
+      .then((h) => setPipelineReady(h.analysis === 'available'))
+      .catch(() => setPipelineReady(false));
+  }, []);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   if (auth.loading) return <Loading />;
@@ -100,11 +107,11 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
         <div className="sidebar-bottom">
           <div className="integration-card">
             <span className="integration-dot" />
-            <strong>Foundation phase</strong>
+            <strong>{pipelineReady ? 'Agent pipeline ready' : 'Agent pipeline offline'}</strong>
             <p>
-              Agent integration pending.
-              <br />
-              Your workspace is ready.
+              {pipelineReady
+                ? 'Find, patch & prove runs in an offline Docker sandbox.'
+                : 'Analysis requests are saved; execution is not configured.'}
             </p>
           </div>
           <a className="docs-link" href="https://github.com" target="_blank" rel="noreferrer">

@@ -62,6 +62,7 @@ export async function generatePatch(input: {
   budget: TokenBudget;
   signal: AbortSignal;
   previousFailure?: string;
+  attempt?: number;
   onUsage?: (usage: AiUsage, note: string) => void | Promise<void>;
 }): Promise<GeneratedPatch> {
   const read = safeRead(input.root);
@@ -85,7 +86,12 @@ export async function generatePatch(input: {
         `(2) Change at most ${PATCH_LIMITS.maxFiles} files and ${PATCH_LIMITS.maxChangedLines} lines; preserve behaviour for valid input; ` +
         'never edit existing tests. (3) Write ONE pytest file ("securityTest") with 1–3 tests that ATTACK the bug: they must FAIL ' +
         'on the vulnerable code and PASS after your fix. Import the code the same way the existing tests do. No network, no ' +
-        'sleeps, no external services; use tmp_path for files. Keep explanation under 80 words.',
+        'sleeps, no external services; use tmp_path for files. Make the attack WORK against the vulnerable line exactly as ' +
+        'written: account for any text that follows the injection point (e.g. end shell payloads with " #" so the rest of the ' +
+        'command is ignored, close quotes in SQL, use absolute tmp_path paths). The test must PASS on a correct fix: a safe implementation may ' +
+        'reject malicious input by raising an exception, so assert only that the attack had no effect (e.g. no file created, ' +
+        'no data leaked), catching expected exceptions with try/except or pytest.raises. Keep explanation under 80 words.' +
+        (input.attempt && input.attempt > 1 ? ` This is attempt ${input.attempt}; do not repeat a previous answer.` : ''),
       data,
       schema: SCHEMA,
       maxOutputTokens: 2_500,

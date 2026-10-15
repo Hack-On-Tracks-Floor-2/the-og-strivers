@@ -52,6 +52,13 @@ export interface Pipeline {
 }
 
 const tail = (text: string, n = 20_000) => (text.length > n ? `…(truncated)\n${text.slice(-n)}` : text);
+/** The useful part of a pytest failure: error lines ("E …"), failing test lines and the summary. */
+export function pytestEssence(logs: string, max = 1_400) {
+  const lines = logs.split(/\r?\n/);
+  const keep = lines.filter((l) => /^(E\s|FAILED\s|ERROR\s|>\s)/.test(l) || /Error:|Exception:|assert /.test(l));
+  const text = (keep.length ? keep : lines.slice(-25)).join('\n');
+  return text.length > max ? text.slice(-max) : text;
+}
 const summarize = (t: TestSummary) =>
   `${t.passed} passed, ${t.failed} failed, ${t.errors} errors, ${t.skipped} skipped (${t.total} tests)`;
 
@@ -284,7 +291,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           await event(run, 'stage_started', `Generating patch for ${finding.file}:${finding.startLine} (${finding.cwe}), attempt ${attempt}/${maxAttempts}.`);
           let generated: GeneratedPatch;
           try {
-            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, onUsage });
+            generated = await generatePatch({ root: store.path(original.id), issue, testFiles, ai, budget, signal, previousFailure, attempt, onUsage });
           } catch (error) {
             if (!(error instanceof EditError)) throw error;
             previousFailure = `Your edits could not be applied: ${error.message}`;
@@ -301,7 +308,8 @@ export function createPipeline(options: PipelineOptions): Pipeline {
             ...Object.fromEntries(generated.changes.map((c) => [c.path, c.proposed])),
           });
           workspaces.push(patched.id);
-          const securityArgv = [...testArgv, testPath];
+          // -rP prints captured output of passing tests too, so a no-effect attack shows its shell/DB errors.
+          const securityArgv = [...testArgv, '--tb=short', '-rP', testPath];
           const baselineRecord = await record(run, patch.id, 'baseline', true, {
             exitCode: baseline.out.exitCode, command: [...testArgv, '--junitxml=/out/junit.xml'], logs: baseline.logs,
             tests: baseline.tests, junit: baseline.out.files['junit.xml'],
@@ -316,8 +324,10 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           });
           if (!reproduced) {
             previousFailure = repro.out.exitCode === 0
-              ? 'Your security test PASSED on the vulnerable code, so it does not reproduce the bug. Write a test that fails on the original code.'
-              : `Your security test could not run on the original code (exit ${repro.out.exitCode}). Output tail:\n${tail(repro.logs, 1200)}`;
+              ? 'Your security test PASSED on the vulnerable code, so your attack had no effect there and does not reproduce the bug. ' +
+                'Look at what the vulnerable line does with your payload (e.g. text appended after the injection point) and make the ' +
+                `attack actually succeed on the original code. Output of your test on the original code:\n${tail(repro.logs, 1200)}`
+              : `Your security test could not run on the original code (exit ${repro.out.exitCode}). Errors:\n${pytestEssence(repro.logs)}`;
             await setPatchStatus(patch, 'rejected');
             await event(run, 'stage_failed', `Attempt ${attempt}: the security test did not reproduce the vulnerability (exit ${repro.out.exitCode}).`);
             continue;
@@ -338,7 +348,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
             exitCode: retest.out.exitCode, command: securityArgv, logs: retest.logs, tests: retest.tests, junit: retest.out.files['junit.xml'],
           });
           if (!secure) {
-            previousFailure = `The patch did not make the security test pass (exit ${retest.out.exitCode}). Output tail:\n${tail(retest.logs, 1200)}`;
+            previousFailure =
+              `After your patch the security test still fails (exit ${retest.out.exitCode}). Decide which is wrong: ` +
+              'if the patch is a correct fix, KEEP THE SAME EDITS and rewrite only the test (a safe implementation may reject or ' +
+              'fail on malicious input; assert only that the attack had no effect, wrapping the call in try/except or ' +
+              `pytest.raises). Errors:\n${pytestEssence(retest.logs)}`;
             await setPatchStatus(patch, 'rejected');
             await event(run, 'stage_failed', `Attempt ${attempt}: security test still fails on the patched code.`);
             continue;

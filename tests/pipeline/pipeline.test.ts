@@ -86,7 +86,7 @@ describe('AI client', () => {
   const req = { task: 't', instructions: 'i', data: 'd', schema: { type: 'object' }, maxOutputTokens: 200 };
   it('uses Groq first by default and Gemini as the fallback', async () => {
     const urls: string[] = [];
-    const ai = createAiClient({ GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q' }, {
+    const ai = createAiClient({ GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', AI_RETRY_DELAY_MS: '0' }, {
       fetchImpl: (async (url: string) => {
         urls.push(String(url));
         return String(url).includes('groq') ? new Response('', { status: 503 }) : ok('{"b":2}');
@@ -120,7 +120,7 @@ password = "hunter2-very-secret"` },
   });
   it('falls back across providers, charges the budget and caches repeat prompts', async () => {
     let calls = 0;
-    const ai = createAiClient({ GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', AI_PROVIDER_ORDER: 'gemini,groq' }, {
+    const ai = createAiClient({ GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', AI_PROVIDER_ORDER: 'gemini,groq', AI_RETRY_DELAY_MS: '0' }, {
       fetchImpl: (async (url: string) => {
         calls++;
         return String(url).includes('generativelanguage') ? new Response('', { status: 429 }) : groqOk('{"a":1}');
@@ -133,7 +133,7 @@ password = "hunter2-very-secret"` },
     expect(budget.used).toBe(100);
     const second = await ai.completeJSON(req, budget, new AbortController().signal);
     expect(second.usage.cached).toBe(true);
-    expect(calls).toBe(2); // Gemini 429 + Groq; the repeat is served from cache
+    expect(calls).toBe(3); // Gemini 429, one retry, then Groq; the repeat is served from cache
   });
   it('refuses work that would exceed the run budget', async () => {
     const ai = createAiClient({ GEMINI_API_KEY: 'g' }, { fetchImpl: (async () => ok('{}')) as typeof fetch })!;

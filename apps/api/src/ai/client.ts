@@ -170,6 +170,7 @@ export function createAiClient(
   const fetchImpl = options.fetchImpl ?? fetch;
   const cache = options.cache ?? new Map();
   const timeoutMs = Number(env.AI_TIMEOUT_MS) > 0 ? Number(env.AI_TIMEOUT_MS) : 90_000;
+  const retryDelayMs = Number(env.AI_RETRY_DELAY_MS) >= 0 && env.AI_RETRY_DELAY_MS !== undefined ? Number(env.AI_RETRY_DELAY_MS) : 15_000;
   const available: Record<string, () => Provider | null> = {
     groq: () =>
       env.GROQ_API_KEY?.trim()
@@ -200,7 +201,8 @@ export function createAiClient(
       const key = createHash('sha256')
         .update(JSON.stringify([request.task, request.instructions, request.data, request.schema]))
         .digest('hex');
-      const hit = cache.get(key);
+      // Only detection is cached: replaying a cached patch would repeat a failed answer on every retry/run.
+      const hit = request.task === 'patch' ? undefined : cache.get(key);
       if (hit) return { value: JSON.parse(redaction.restore(hit.text)) as T, usage: { ...hit.usage, cached: true } };
       budget.reserve(promptTokens + request.maxOutputTokens);
       const attempts: { provider: string; reason: string }[] = [];
@@ -210,7 +212,15 @@ export function createAiClient(
         signal.addEventListener('abort', abort, { once: true });
         const timer = setTimeout(abort, timeoutMs);
         try {
-          const out = await provider.call(request, controller.signal);
+          let out: Awaited<ReturnType<Provider['call']>>;
+          try {
+            out = await provider.call(request, controller.signal);
+          } catch (first) {
+            // Rate limit / overload: wait once and retry the same provider before falling back.
+            if (!(first instanceof Error) || !/HTTP (429|503)/.test(first.message) || signal.aborted) throw first;
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+            out = await provider.call(request, controller.signal);
+          }
           const value = JSON.parse(redaction.restore(out.text)) as T;
           const usage: AiUsage = {
             provider: provider.name,

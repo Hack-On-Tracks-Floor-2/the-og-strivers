@@ -182,7 +182,7 @@ export function ScannerPage() {
                   <span>{date(item.createdAt)}</span>
                   <span className="mono">RUN / {item.id.slice(0, 8)}</span>
                 </div>
-                <Status value={item.status} />
+                <Status value={live.run?.id === item.id ? live.run.status : item.status} />
               </button>
             ))}
           </section>
