@@ -63,12 +63,13 @@ export function unifiedDiff(path: string, before: string, after: string, context
       ops.push({ t: ' ', text: am[i], ai: pre + i, bi: pre + j });
       i++;
       j++;
-    } else if (j < bm.length && (i >= am.length || dp[i][j + 1] >= dp[i + 1][j])) {
-      ops.push({ t: '+', text: bm[j], ai: pre + i, bi: pre + j });
-      j++;
-    } else {
+    } else if (i < am.length && (j >= bm.length || dp[i + 1][j] >= dp[i][j + 1])) {
+      // Prefer deletions first so each hunk reads "- old" then "+ new".
       ops.push({ t: '-', text: am[i], ai: pre + i, bi: pre + j });
       i++;
+    } else {
+      ops.push({ t: '+', text: bm[j], ai: pre + i, bi: pre + j });
+      j++;
     }
   }
   for (let k = 0; k < suf; k++)
