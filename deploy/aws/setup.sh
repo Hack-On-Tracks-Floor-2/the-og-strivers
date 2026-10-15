@@ -59,6 +59,7 @@ sudo -u "$USER_NAME" python3 -m venv "$APP/ml/mini_classifier/.venv"
 sudo -u "$USER_NAME" "$ML_PYTHON" -m pip --disable-pip-version-check install --only-binary=:all: -r ml/mini_classifier/requirements.txt
 # Verify the committed artifact hashes and perform real inference before restarting the API.
 sudo -u "$USER_NAME" env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$ML_PYTHON" ml/mini_classifier/predict.py --file ml/mini_classifier/artifacts/heldout-example.java --language java
+sudo -u "$USER_NAME" env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$ML_PYTHON" ml/multilang_classifier/predict.py --language python --file ml/multilang_classifier/artifacts/python/heldout-example.py
 sudo -u "$USER_NAME" npm ci --no-audit --no-fund
 sudo -u "$USER_NAME" npm run build -w @proofpatch/shared
 sudo -u "$USER_NAME" npm run build -w @proofpatch/api
