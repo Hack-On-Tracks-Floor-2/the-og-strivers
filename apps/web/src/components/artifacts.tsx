@@ -34,6 +34,11 @@ export function FindingCard({ finding }: { finding: Finding }) {
                 : 'AI investigation'}
           </strong>
         </span>
+        {finding.scanners.length > 0 && (
+          <span>
+            Detected by <strong>{finding.scanners.join(', ')}</strong>
+          </span>
+        )}
         <span>
           Model confidence <strong>{Math.round(finding.confidence * 100)}%</strong>
         </span>

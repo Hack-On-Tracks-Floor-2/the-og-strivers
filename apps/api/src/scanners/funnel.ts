@@ -308,7 +308,11 @@ export async function findCandidates(
   for (const ext of options.external ?? []) {
     if (!contents.has(ext.file)) continue;
     const same = hits.find((h) => h.file === ext.file && Math.abs(h.line - ext.line) <= 2 && h.cwe === ext.cwe);
-    if (same) same.score += 4; // scanner agreement
+    if (same) {
+      // Scanner agreement: stronger evidence, and the agreeing scanner stays on record.
+      same.score += 4;
+      if (!same.rule.split('+').includes(ext.rule)) same.rule = `${same.rule}+${ext.rule}`;
+    }
     else hits.push({ ...ext, score: 5, external: true });
   }
   // Trained model: scores every function, so it can rank regex hits and surface code the rules miss.

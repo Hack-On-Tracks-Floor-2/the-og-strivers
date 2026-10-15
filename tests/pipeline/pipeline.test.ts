@@ -14,6 +14,7 @@ import { createAiClient, TokenBudget, type AiClient } from '../../apps/api/src/a
 import { findCandidates, PYTHON_SINKS } from '../../apps/api/src/scanners/funnel.js';
 import { JS_SINKS } from '../../apps/api/src/scanners/javascript.js';
 import { auditSummary, parseAudit } from '../../apps/api/src/verification/audit.js';
+import { parseSemgrep, scannersOf, semgrepArgv, semgrepRuleDirs } from '../../apps/api/src/scanners/semgrep.js';
 import { OWASP_TOP_10, owaspFor } from '@proofpatch/shared';
 import { applyEdits, unifiedDiff, changedLineCount, EditError } from '../../apps/api/src/patching/edits.js';
 import { parseJUnit, compareSuites } from '../../apps/api/src/verification/junit.js';
@@ -185,6 +186,43 @@ describe('more languages: detection and toolchains', () => {
   });
 });
 
+describe('Semgrep adapter', () => {
+  // Trimmed from a real `semgrep --json` run (1.178.0, pinned rules) on the invoice-tools demo.
+  const REPORT = JSON.stringify({
+    results: [
+      { check_id: 'python.lang.security.audit.formatted-sql-query.formatted-sql-query', path: 'vulnapp/store.py', start: { line: 16, col: 12 }, end: { line: 16, col: 90 },
+        extra: { message: 'Detected possible formatted SQL query. Use parameterized queries instead.', severity: 'WARNING', metadata: { cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"] } } },
+      { check_id: 'python.lang.security.deserialization.pickle.avoid-pickle', path: './vulnapp/session.py', start: { line: 11, col: 12 }, end: { line: 11, col: 40 },
+        extra: { message: 'Avoid using pickle.', severity: 'WARNING', metadata: { cwe: 'CWE-502: Deserialization of Untrusted Data' } } },
+    ],
+    errors: [{ type: 'Syntax error' }],
+  });
+  it('maps real Semgrep JSON to findings with file, line, column, CWE, severity and rule', () => {
+    const parsed = parseSemgrep(REPORT)!;
+    expect(parsed.errors).toBe(1);
+    expect(parsed.hits).toEqual([
+      expect.objectContaining({ file: 'vulnapp/store.py', line: 16, column: 12, cwe: 'CWE-89', severity: 'WARNING', rule: 'semgrep:formatted-sql-query' }),
+      expect.objectContaining({ file: 'vulnapp/session.py', line: 11, cwe: 'CWE-502', rule: 'semgrep:avoid-pickle' }),
+    ]);
+    expect(parseSemgrep('')).toBeNull();
+    expect(parseSemgrep('not json')).toBeNull();
+  });
+  it('only uses pinned rule folders, never repository configs or autofix', () => {
+    expect(semgrepRuleDirs(['TypeScript', 'Java', 'Haskell'])).toEqual(['typescript', 'javascript', 'java']);
+    const argv = semgrepArgv(['python']);
+    expect(argv.filter((a, i) => argv[i - 1] === '--config')).toEqual(['/rules/python']);
+    expect(argv).toContain('--metrics=off');
+    expect(argv.join(' ')).not.toMatch(/autofix|--fix|auto/);
+  });
+  it('merges a Semgrep hit with ProofPatch rules on the same line and keeps both scanners', async () => {
+    const { hits } = parseSemgrep(REPORT)!;
+    const { candidates } = await findCandidates(FIXTURE, { external: hits });
+    const sql = candidates.find((c) => c.cwe === 'CWE-89')!;
+    expect(sql.rule).toContain('semgrep:formatted-sql-query');
+    expect(scannersOf(sql.rule)).toEqual(expect.arrayContaining(['Semgrep', 'ProofPatch rules']));
+  });
+});
+
 describe('OWASP Top 10 coverage', () => {
   it.each([
     ['Python', PYTHON_SINKS],
@@ -345,7 +383,7 @@ describe('Docker sandbox hardening', () => {
 /* ---------------- end-to-end orchestration with fake AI + fake sandbox ---------------- */
 
 /** Imitates pytest on the fixture by reading the workspace files (no real code execution). */
-function fakeSandbox(store: WorkspaceStore, options: { breakSuite?: boolean } = {}): PipelineSandbox & { calls: string[][] } {
+function fakeSandbox(store: WorkspaceStore, options: { breakSuite?: boolean; redBaseline?: boolean } = {}): PipelineSandbox & { calls: string[][] } {
   const calls: string[][] = [];
   return {
     calls,
@@ -366,7 +404,7 @@ function fakeSandbox(store: WorkspaceStore, options: { breakSuite?: boolean } = 
         ? [['test_injection_does_not_return_all_users', !vulnerable]]
         : [
             ['test_finds_existing_user', !broken],
-            ['test_unknown_user_is_empty', true],
+            ['test_unknown_user_is_empty', !options.redBaseline],
             ['test_checksum_is_stable', true],
             ...(hasSec ? ([['test_injection_does_not_return_all_users', !vulnerable]] as [string, boolean][]) : []),
           ];
@@ -438,7 +476,7 @@ describe.sequential('end-to-end pipeline', () => {
     await rm(folder, { recursive: true, force: true });
   });
 
-  async function setup(ai: AiClient, sandboxOptions: { breakSuite?: boolean } = {}, github = fakeGithub()) {
+  async function setup(ai: AiClient, sandboxOptions: { breakSuite?: boolean; redBaseline?: boolean } = {}, github = fakeGithub()) {
     await db?.close();
     db = await openDatabase(join(folder, randomUUID(), 'db'));
     await provisionReviewer(db, { email: 'reviewer@example.com', password, name: 'Reviewer' });
@@ -566,6 +604,15 @@ describe.sequential('end-to-end pipeline', () => {
     await pipeline.idle();
     expect(github.published).toHaveLength(1);
     expect(github.published[0].storePy).toContain('found = db.execute("SELECT id, name, email FROM users WHERE name = ?", (name,))');
+  });
+
+  it('stops with a clear reason when the original suite is already failing (no silent red baseline)', async () => {
+    const ai = fakeAi([[VULN_LINE, SAFE_LINE]]);
+    const { dev, runId } = await setup(ai, { redBaseline: true });
+    const run = (await dev.get(`/api/runs/${runId}`)).body.data;
+    expect(run.status).toBe('failed');
+    expect(run.error).toMatch(/not passing before any change/);
+    expect(ai.tasks).toEqual([]); // no AI tokens spent on a repository whose proofs cannot hold
   });
 
   it('sends the fix back for patching when it breaks tests on the latest code', async () => {

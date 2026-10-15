@@ -16,6 +16,8 @@ import {
   type Patch,
   type VerificationRun,
   SubmissionSchema,
+  REQUIRED_PROOF_STAGES,
+  stageHasProof,
 } from '@proofpatch/shared';
 import type { Database } from '../database/index.js';
 import { authenticate, currentUser, requireRole } from '../middleware/auth.js';
@@ -382,35 +384,21 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
           'SELECT document FROM verifications WHERE patch_id=$1 AND run_id=$2',
           [patch.id, patch.runId],
         );
-        const stages = [
-          'baseline',
-          'reproduction',
-          'patch_application',
-          'security_retest',
-          'regression',
-        ];
+        // Same rule as the reviewer UI (shared): exit codes, logs, artifacts AND real test results.
         if (
-          !stages.every((stage) => {
-            const record = evidence.rows
-              .map((r) => r.document)
-              .filter((v) => v.stage === stage)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-            // Reproduction proves the vulnerability: the security test must FAIL on the
-            // original code (pytest exit 1). Every other stage must exit 0.
-            return (
-              record &&
-              record.status === 'passed' &&
-              record.exitCode === (stage === 'reproduction' ? 1 : 0) &&
-              record.logs.trim() &&
-              record.artifactId &&
-              record.completedAt
-            );
-          })
+          !REQUIRED_PROOF_STAGES.every((stage) =>
+            stageHasProof(
+              evidence.rows
+                .map((r) => r.document)
+                .filter((v) => v.stage === stage)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+            ),
+          )
         )
           throw new HttpError(
             409,
             'EVIDENCE_REQUIRED',
-            'Approval requires recorded passing baseline, reproduction, patch application, security retest and regression evidence with exit codes, logs and artifact references.',
+            'Approval requires recorded passing baseline, reproduction, patch application, security retest and regression evidence with exit codes, logs, artifact references and non-empty test results.',
           );
       }
       const now = new Date().toISOString();

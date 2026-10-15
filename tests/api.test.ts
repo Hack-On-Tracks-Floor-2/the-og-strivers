@@ -240,6 +240,37 @@ describe.sequential('real authentication, records and roles', () => {
     expect((await reviewer.get('/api/reviews/queue')).body.data).toEqual([]);
     expect((await developer.get('/api/submissions')).body.data[0].status).toBe('rejected');
   });
+  it('refuses approval when exit codes look right but the test results are empty or skipped', async () => {
+    const now = new Date().toISOString();
+    const findingId = randomUUID();
+    const patchId = randomUUID();
+    await db.query('INSERT INTO findings(id,run_id,owner_id,document) VALUES($1,$2,$3,$4)', [
+      findingId, runId, developerId,
+      { id: findingId, runId, ownerId: developerId, category: 'fixture', severity: 'low', confidence: 1, file: 'a.py', startLine: 1, endLine: 1, rootCause: 'x', evidence: [], recommendation: 'x', createdAt: now },
+    ]);
+    await db.query('INSERT INTO patches(id,run_id,finding_id,owner_id,document) VALUES($1,$2,$3,$4,$5)', [
+      patchId, runId, findingId, developerId,
+      { id: patchId, runId, findingId, ownerId: developerId, status: 'needs_review', files: [], unifiedDiff: '', createdAt: now, updatedAt: now },
+    ]);
+    // Every stage "passed" with the right exit code, logs and artifact — but no real test results.
+    const empty = { total: 0, passed: 0, failed: 0, errors: 0, skipped: 0, cases: [] };
+    const skipped = { total: 2, passed: 0, failed: 0, errors: 0, skipped: 2, cases: [] };
+    for (const [stage, exitCode, tests] of [
+      ['baseline', 0, skipped], ['reproduction', 1, empty], ['patch_application', 0, null], ['security_retest', 0, empty], ['regression', 0, skipped],
+    ] as const) {
+      const id = randomUUID();
+      await db.query('INSERT INTO verifications(id,run_id,patch_id,owner_id,document) VALUES($1,$2,$3,$4,$5)', [
+        id, runId, patchId, developerId,
+        { id, runId, patchId, ownerId: developerId, stage, status: 'passed', exitCode, command: ['x'], logs: 'ran', artifactId: 'a'.repeat(40), tests, createdAt: now, completedAt: now },
+      ]);
+    }
+    const res = await reviewer
+      .post(`/api/reviews/${patchId}/decision`)
+      .set('Origin', origin)
+      .send({ decision: 'approved', reason: 'Exit codes look fine but nothing was really tested.' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('EVIDENCE_REQUIRED');
+  });
   it('returns real overview counts', async () => {
     const res = await reviewer.get('/api/overview');
     expect(res.body.data.repositories).toBe(1);

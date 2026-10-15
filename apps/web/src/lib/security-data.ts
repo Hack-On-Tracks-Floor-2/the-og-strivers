@@ -89,26 +89,9 @@ export function patchEvidence(patch: Patch, records: VerificationRun[]): Verific
     records.filter((record) => record.patchId === patch.id && record.runId === patch.runId),
   );
 }
-export function stageHasProof(record: VerificationRun | undefined): boolean {
-  if (
-    !record ||
-    record.status !== 'passed' ||
-    record.exitCode !== (record.stage === 'reproduction' ? 1 : 0) ||
-    !record.completedAt ||
-    !record.logs.trim() ||
-    !record.artifactId
-  )
-    return false;
-  // A skipped or empty test suite does not prove a security or regression check.
-  if (['baseline', 'reproduction', 'security_retest', 'regression'].includes(record.stage)) {
-    if (!record.tests || record.tests.total === 0 || record.tests.skipped === record.tests.total)
-      return false;
-    if (record.stage === 'reproduction')
-      return record.tests.failed > 0 && record.tests.errors === 0;
-    return record.tests.passed > 0 && record.tests.failed === 0 && record.tests.errors === 0;
-  }
-  return true;
-}
+/** The proof rule lives in @proofpatch/shared so the UI and the backend approval gate agree. */
+import { stageHasProof } from '@proofpatch/shared';
+export { stageHasProof };
 export type VerificationState =
   'checks_passed' | 'failed' | 'running' | 'pending' | 'not_available';
 export function verificationState(patch: Patch, records: VerificationRun[]): VerificationState {

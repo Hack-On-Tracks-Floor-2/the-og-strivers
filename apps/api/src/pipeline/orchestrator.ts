@@ -23,6 +23,7 @@ import type { CapabilityResult, WorkspaceHandle } from '../agents/contracts.js';
 import { inspectRepository, listSourceFiles } from '../agents/intelligence.js';
 import { detectToolchain, type Runtime, type Toolchain } from '../agents/toolchain.js';
 import { auditSummary, parseAudit } from '../verification/audit.js';
+import { parseSemgrep, scannersOf, semgrepArgv, semgrepRuleDirs, SEMGREP_RULES_COMMIT, SEMGREP_VERSION } from '../scanners/semgrep.js';
 import { detectVulnerabilities, type DetectedIssue } from '../agents/detection.js';
 import { generatePatch, type GeneratedPatch } from '../patching/generator.js';
 import { EditError, unifiedDiff } from '../patching/edits.js';
@@ -139,6 +140,47 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     return { map, tc };
   }
 
+  /**
+   * Semgrep with pinned rules for every detected language (mixed repositories included), network=none.
+   * Its outcome is always reported: findings, scanner errors, or why it could not run.
+   */
+  async function runSemgrep(run: AnalysisRun, workspace: WorkspaceHandle, languages: string[], signal: AbortSignal): Promise<ExternalHit[]> {
+    const dirs = semgrepRuleDirs(languages);
+    if (!dirs.length) {
+      await event(run, 'stage_completed', `Semgrep: no pinned rules for ${languages.join(', ') || 'this repository'}; skipped.`);
+      return [];
+    }
+    const result = await sandbox
+      .executeWith(
+        { workspace, argv: semgrepArgv(dirs), timeoutMs: 240_000, memoryMb: 1536, cpuLimit: 1, network: 'none', readOnlyRoot: true, maxOutputBytes: 200_000, language: 'semgrep' },
+        workspace.id,
+        signal,
+      )
+      .catch((error: unknown) => ({ state: 'failed' as const, message: error instanceof Error ? error.message : 'Semgrep failed.' }));
+    if (result.state !== 'completed') {
+      await event(run, 'stage_failed', `Semgrep could not run: ${'message' in result ? result.message : 'unknown error'}. Continuing with the other scanners.`);
+      return [];
+    }
+    if (result.data.timedOut) {
+      await event(run, 'stage_failed', 'Semgrep timed out after 240 s. Continuing with the other scanners.');
+      return [];
+    }
+    const parsed = parseSemgrep(result.data.files['semgrep.json']);
+    if (!parsed) {
+      await event(run, 'stage_failed', `Semgrep produced no report (exit ${result.data.exitCode}). Continuing with the other scanners.`);
+      return [];
+    }
+    const report = `Semgrep ${SEMGREP_VERSION} · rules ${SEMGREP_RULES_COMMIT.slice(0, 7)} (${dirs.join(', ')})\n\n` +
+      parsed.hits.map((h) => `${h.file}:${h.line}:${h.column} ${h.severity} ${h.cwe} ${h.rule} — ${h.category}`).join('\n');
+    await event(
+      run,
+      'stage_completed',
+      `Semgrep ${SEMGREP_VERSION} (pinned rules ${SEMGREP_RULES_COMMIT.slice(0, 7)}: ${dirs.join(', ')}): ${parsed.hits.length} finding(s)${parsed.errors ? `, ${parsed.errors} file(s) it could not analyse` : ''}.`,
+      await artifact(run, 'report', report),
+    );
+    return parsed.hits;
+  }
+
   async function execute(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
     const result = await sandbox.executeWith(
       {
@@ -157,6 +199,11 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     );
     if (result.state !== 'completed') throw new StageFailure(result.message);
     return result.data;
+  }
+
+  /** A security retest counts only if it completed, exited 0, and at least one test actually passed. */
+  function suitePassed(r: { out: { exitCode: number; timedOut: boolean }; tests: TestSummary | null }) {
+    return !r.out.timedOut && r.out.exitCode === 0 && !!r.tests && r.tests.passed > 0 && r.tests.failed + r.tests.errors === 0;
   }
 
   async function runSuite(workspace: WorkspaceHandle, depsId: string, argv: string[], signal: AbortSignal) {
@@ -209,6 +256,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       endLine: issue.candidate.endLine,
       rootCause: issue.rootCause,
       evidence: [`Scanner rule ${issue.candidate.rule} at line ${issue.candidate.line}`, ...issue.evidence],
+      scanners: scannersOf(issue.candidate.rule),
       recommendation: issue.recommendation,
       cwe: issue.cwe,
       source: issue.source,
@@ -276,8 +324,9 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       if ('detectOnly' in chain) {
         await event(run, 'stage_completed', `Mapped: ${map.languages.join(', ')}${map.frameworks.length ? ` · ${map.frameworks.join(', ')}` : ''} · ${chain.label}.`);
         await setRun(run, { status: 'analyzing' });
-        const found = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, language: chain.language, onUsage });
-        await event(run, 'stage_completed', `Search funnel: ${found.filesScanned} source files → ${found.hits} scanner hits → ${found.candidates.length} snippets sent to AI → ${found.issues.length} confirmed.`);
+        const semgrepHits = await runSemgrep(run, original, map.languages, signal);
+        const found = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external: semgrepHits, language: chain.language, onUsage });
+        await event(run, 'stage_completed', `Search funnel: ${found.filesScanned} source files → ${found.hits} scanner hits (Semgrep ${semgrepHits.length}) → ${found.candidates.length} snippets sent to AI → ${found.issues.length} confirmed.`);
         if (!found.issues.length) throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');
         for (const issue of found.issues.slice(0, 6)) await saveFinding(run, issue);
         await setRun(run, { status: 'needs_review', error: null });
@@ -304,8 +353,15 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await setRun(run, { status: 'analyzing' });
       await event(run, 'stage_started', 'Running the original test suite (baseline, network=none).');
       const baseline = await runSuite(original, original.id, testArgv, signal);
+      if (baseline.out.timedOut)
+        throw new StageFailure(`The original test suite timed out after ${Math.round(testTimeoutMs / 1000)} s, so regressions cannot be proven.`);
       if (!baseline.tests || baseline.tests.total === 0)
-        throw new StageFailure(`Baseline test run produced no test results (exit ${baseline.out.exitCode}${baseline.out.timedOut ? ', timed out' : ''}).`);
+        throw new StageFailure(`Baseline test run produced no test results (exit ${baseline.out.exitCode}).`);
+      if (baseline.tests.skipped === baseline.tests.total)
+        throw new StageFailure('Every test in the original suite was skipped, so it cannot prove anything about a patch.');
+      // A red baseline is not silently accepted: regressions can only be proven against a passing suite.
+      if (baseline.out.exitCode !== 0 || baseline.tests.failed + baseline.tests.errors > 0)
+        throw new StageFailure(`The original test suite is not passing before any change (exit ${baseline.out.exitCode}; ${summarize(baseline.tests)}). Fix the existing failures first; a regression proof needs a green baseline.`);
       await event(run, 'stage_completed', `Baseline: ${summarize(baseline.tests)}.`);
 
       // 5. Local scanner (Bandit, in the sandbox) + sink search + one AI confirmation call.
@@ -326,11 +382,14 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       } catch {
         external = [];
       }
+      const banditCount = external.length;
+      const semgrepHits = await runSemgrep(run, original, map.languages, signal);
+      external = [...external, ...semgrepHits];
       const detection = await detectVulnerabilities({ root: store.path(original.id), ai, budget, signal, external, locator: options.locator, language: tc.language, onUsage });
       await event(
         run,
         'stage_completed',
-        `Search funnel: ${detection.filesScanned} source files → ${detection.hits} scanner hits (Bandit ${external.length})${modelNote(detection.model)} → ${detection.candidates.length} snippets sent to AI → ${detection.issues.length} confirmed.`,
+        `Search funnel: ${detection.filesScanned} source files → ${detection.hits} scanner hits (Bandit ${banditCount}, Semgrep ${semgrepHits.length})${modelNote(detection.model)} → ${detection.candidates.length} snippets sent to AI → ${detection.issues.length} confirmed.`,
       );
       if (!detection.issues.length)
         throw new StageFailure('No exploitable vulnerability was confirmed among the scanner candidates.');
@@ -376,7 +435,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
 
           // Reproduction: the generated exploit test must FAIL on the original code.
           const repro = await runSuite(withTest, original.id, securityArgv, signal);
-          const reproduced = repro.out.exitCode === 1 && !!repro.tests && repro.tests.failed > 0;
+          const reproduced = !repro.out.timedOut && repro.out.exitCode === 1 && !!repro.tests && repro.tests.failed > 0;
           await record(run, patch.id, 'reproduction', reproduced, {
             exitCode: repro.out.exitCode, command: securityArgv, logs: repro.logs, tests: repro.tests, junit: repro.out.files['junit.xml'],
           });
@@ -401,7 +460,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
 
           // Security retest: the same exploit test must PASS on the patched code.
           const retest = await runSuite(patched, original.id, securityArgv, signal);
-          const secure = retest.out.exitCode === 0 && !!retest.tests && retest.tests.failed + retest.tests.errors === 0;
+          const secure = suitePassed(retest);
           await record(run, patch.id, 'security_retest', secure, {
             exitCode: retest.out.exitCode, command: securityArgv, logs: retest.logs, tests: retest.tests, junit: retest.out.files['junit.xml'],
           });
@@ -420,7 +479,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
           // Regression: every test that passed before must still pass.
           const after = await runSuite(patched, original.id, testArgv, signal);
           const gate = after.tests ? compareSuites(baseline.tests, after.tests) : null;
-          const regressionOk = !!gate?.ok;
+          const regressionOk = !!gate?.ok && !after.out.timedOut && after.out.exitCode === 0;
           await record(run, patch.id, 'regression', regressionOk, {
             exitCode: after.out.exitCode,
             command: testArgv,
@@ -595,7 +654,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       const merged = await copyWorkspace(latest, files);
       workspaces.push(merged.id);
       const retest = await runSuite(merged, latest.id, securityArgv, signal);
-      const secure = retest.out.exitCode === 0 && !!retest.tests && retest.tests.failed + retest.tests.errors === 0;
+      const secure = suitePassed(retest);
       checks.push({ stage: 'security_retest', passed: secure, summary: secure ? 'The merged fix blocks the attack.' : 'The attack still works after merging the fix.' });
       if (!secure) return await sendBack(ctx, checks, 'After merging onto the latest code the attack still works.');
       const after = await runSuite(merged, latest.id, testArgv, signal);
@@ -604,7 +663,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
         stage: 'regression', passed: !!gate?.ok,
         summary: gate?.ok ? `${summarize(after.tests!)}; no previously passing test broke.` : `Broken: ${gate?.broken.slice(0, 5).map((b) => b.id).join(', ') ?? 'suite did not run'}.`,
       });
-      if (!gate?.ok) return await sendBack(ctx, checks, 'Merging onto the latest code broke existing tests.');
+      if (!gate?.ok || after.out.timedOut || after.out.exitCode !== 0) return await sendBack(ctx, checks, 'Merging onto the latest code broke existing tests.');
 
       // 4. AI-resolved merges wait for a reviewer; clean merges are published straight away.
       if (resolvedByAi.length) {

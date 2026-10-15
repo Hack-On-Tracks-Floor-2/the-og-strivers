@@ -67,6 +67,7 @@ docker build -t proofpatch-runner:node22 docker/runner-node
 docker build -t proofpatch-runner:go122 docker/runner-go
 docker build -t proofpatch-runner:php83 docker/runner-php
 for x in java:java21 dotnet:dotnet8 ruby:ruby33 rust:rust180 c:c13; do docker build -t "proofpatch-runner:${x##*:}" "docker/runner-${x%%:*}"; done
+docker build -t proofpatch-semgrep:1.178.0 docker/runner-semgrep
 
 # 4. API as a service (restarts on crash and on reboot).
 cat > /etc/systemd/system/proofpatch-api.service <<EOF

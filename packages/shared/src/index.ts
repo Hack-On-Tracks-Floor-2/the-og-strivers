@@ -120,6 +120,8 @@ export const FindingSchema = z.object({
   // CWE identifier (e.g. "CWE-89") and which stage of the search funnel produced it.
   cwe: z.string().nullable().default(null),
   source: z.enum(['scanner', 'ai', 'scanner+ai']).default('ai'),
+  /** Scanners that reported this location (e.g. Semgrep, Bandit, ProofPatch rules, Trained model). */
+  scanners: z.array(z.string()).default([]),
   createdAt: Timestamp,
 });
 export const SecurityTestSchema = z.object({ path: z.string(), content: z.string() });
@@ -284,3 +286,4 @@ export const HealthSchema = z.object({
   reason: z.string().optional(),
 });
 export * from './owasp.js';
+export * from './proof.js';

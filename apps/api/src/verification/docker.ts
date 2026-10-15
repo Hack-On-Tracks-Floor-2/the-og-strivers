@@ -18,6 +18,8 @@ export interface DockerOptions {
   rubyImage?: string;
   rustImage?: string;
   cImage?: string;
+  /** Pinned Semgrep CLI + pinned security rules (scanner only; never runs repository code). */
+  semgrepImage?: string;
   workspacePath: (id: string) => string;
   scratchRoot: string; // per-execution output folders and dependency folders
   docker?: string;
@@ -106,7 +108,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
     });
   }
 
-  private imageFor(runtime: Runtime = 'python') {
+  private imageFor(runtime: Runtime | 'semgrep' = 'python') {
     return {
       python: this.options.image,
       node: this.options.nodeImage ?? 'proofpatch-runner:node22',
@@ -117,6 +119,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
       ruby: this.options.rubyImage ?? 'proofpatch-runner:ruby33',
       rust: this.options.rustImage ?? 'proofpatch-runner:rust180',
       c: this.options.cImage ?? 'proofpatch-runner:c13',
+      semgrep: this.options.semgrepImage ?? 'proofpatch-semgrep:1.178.0',
     }[runtime];
   }
 
@@ -260,7 +263,7 @@ export class DockerSandbox implements SandboxExecutionAdapter {
         signal,
       );
       const files: Record<string, string> = {};
-      for (const name of ['junit.xml', 'bandit.json'])
+      for (const name of ['junit.xml', 'bandit.json', 'semgrep.json'])
         if (existsSync(join(out, name))) files[name] = (await readFile(join(out, name), 'utf8')).slice(0, 2_000_000);
       return {
         state: 'completed',
