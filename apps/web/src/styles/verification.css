@@ -1,0 +1,13 @@
+.verification-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 24px; }
+.verification-controls label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.verification-controls input[type="file"] { max-width: 220px; font-size: 12px; }
+.recorded-notice { border-left: 3px solid var(--accent, #c7fa53); }
+.recorded-verdict { border-top: 2px solid var(--accent, #c7fa53); }
+.recorded-code-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.recorded-stage, .recorded-verdict, .recorded-notice, .recorded-code-grid, .public-verification > details { margin-bottom: 20px; }
+.recorded-stage summary, .public-verification summary { cursor: pointer; padding: 8px 0; }
+.recorded-stage pre, .recorded-code-grid pre, .public-verification pre { overflow: auto; max-height: 460px; white-space: pre; font-size: 12px; line-height: 1.7; }
+.recorded-stage code, .recorded-verdict code { overflow-wrap: anywhere; }
+.public-verification { max-width: 1400px; margin: auto; padding: 24px clamp(18px, 4vw, 64px); }
+.verification-public-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 48px; }
+@media (max-width: 850px) { .recorded-code-grid { grid-template-columns: 1fr; } .verification-controls select { max-width: 85vw; } }

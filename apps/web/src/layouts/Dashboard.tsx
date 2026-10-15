@@ -27,6 +27,7 @@ const developerNav = [
   ['scanner', 'Security Scanner', ScanLine],
   ['findings', 'Findings', ShieldAlert],
   ['patches', 'Patch Studio', GitPullRequest],
+  ['verification', 'Regression Verification', ClipboardCheck],
   ['evidence', 'Evidence Rail', Layers],
   ['settings', 'Settings', Settings],
 ] as const;
@@ -35,6 +36,7 @@ const reviewerNav = [
   ['queue', 'Review Queue', ListChecks],
   ['findings', 'Security Findings', ShieldAlert],
   ['patches', 'Patch Inspection', GitPullRequest],
+  ['verification', 'Regression Verification', ClipboardCheck],
   ['evidence', 'Evidence Rail', Layers],
   ['decisions', 'Review Decisions', ClipboardCheck],
 ] as const;

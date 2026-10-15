@@ -11,13 +11,16 @@ import { ScannerPage } from './pages/Scanner';
 import { ArtifactsPage } from './pages/Artifacts';
 import { ReviewsPage } from './pages/Reviews';
 import { SettingsPage } from './pages/Settings';
+import { VerificationPage } from './pages/Verification';
 import './styles/index.css';
+import './styles/verification.css';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/verification" element={<VerificationPage publicReport />} />
           {(['developer', 'reviewer'] as const).map((role) => (
             <React.Fragment key={role}>
               <Route path={`/${role}`} element={<Landing role={role} />} />
@@ -27,6 +30,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="findings" element={<ArtifactsPage kind="findings" />} />
                 <Route path="patches" element={<ArtifactsPage kind="patches" />} />
                 <Route path="evidence" element={<ArtifactsPage kind="evidence" />} />
+                <Route path="verification" element={<VerificationPage />} />
                 {role === 'developer' ? (
                   <>
                     <Route path="repositories" element={<RepositoriesPage />} />

@@ -112,9 +112,9 @@ export function PatchWorkspace({
           </div>
           <Link
             className="text-button"
-            to={`${base}/evidence?run=${patch.runId}&patch=${patch.id}`}
+            to={`${base}/verification?source=records&run=${patch.runId}&patch=${patch.id}`}
           >
-            Open Evidence Rail <ArrowUpRight size={15} />
+            Regression Verification <ArrowUpRight size={15} />
           </Link>
         </div>
         <div className="verification-stage-grid">
@@ -159,9 +159,9 @@ export function PatchWorkspace({
         </Link>
         <Link
           className="button secondary small-button"
-          to={`${base}/evidence?run=${patch.runId}&patch=${patch.id}`}
+          to={`${base}/verification?source=records&run=${patch.runId}&patch=${patch.id}`}
         >
-          Verification evidence <ArrowUpRight size={14} />
+          Regression Verification <ArrowUpRight size={14} />
         </Link>
         {user?.role === 'reviewer' && patch.status === 'needs_review' && (
           <Link className="button primary small-button" to={`${base}/queue?patch=${patch.id}`}>

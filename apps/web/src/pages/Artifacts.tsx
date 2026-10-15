@@ -111,6 +111,7 @@ export function ArtifactsPage({ kind }: { kind: keyof typeof content }) {
         eyebrow={copy.eyebrow}
         title={kind === 'patches' && user!.role === 'reviewer' ? 'PATCH INSPECTION' : copy.title}
         description={copy.description}
+        action={kind === 'patches' ? <Link className="button secondary small-button" to={`${base}/verification`}>Regression Verification <ArrowUpRight size={15} /></Link> : undefined}
       />
       {index.data && (
         <RunScope

@@ -70,7 +70,7 @@ export function Landing({ role }: { role?: PortalRole }) {
             <ArrowLeft size={14} aria-hidden="true" /> Switch portal
           </Link>
         ) : (
-          <span className="portal-header-caption mono">DETECT. PROVE. PATCH. VERIFY.</span>
+          <Link className="portal-switch" to="/verification">Regression Verification <ArrowUpRight size={15} /></Link>
         )}
       </header>
       {role ? (
