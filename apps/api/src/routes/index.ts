@@ -33,7 +33,7 @@ import type { Pipeline } from '../pipeline/orchestrator.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultRegressionEvidence } from '../verification/regression-demo.js';
-import { modelInfo, classifySource, heldoutExample } from '../services/mini-ml.js';
+import { modelInfo, modelCatalog, classifySource, heldoutExample } from '../services/mini-ml.js';
 
 const reviewable = `EXISTS (SELECT 1 FROM patches p WHERE p.run_id=runs.id AND p.document->>'status' IN ('needs_review','approved','rejected'))`;
 /** One plain status a developer may see for their submission. */
@@ -122,8 +122,10 @@ export async function apiRouter(db: Database, production: boolean, pipeline?: Pi
     send(res, { loggedOut: true });
   });
   router.use(authenticate(db));
-  router.get('/ml/model-info', async (_req, res) => send(res, await modelInfo()));
-  router.get('/ml/example', async (_req, res) => send(res, await heldoutExample()));
+  const mlLanguage = (req: Request) => z.object({ language: z.string().trim().min(1).max(30).default('java') }).strict().parse(req.query).language;
+  router.get('/ml/models', async (_req, res) => send(res, await modelCatalog()));
+  router.get('/ml/model-info', async (req, res) => send(res, await modelInfo(mlLanguage(req))));
+  router.get('/ml/example', async (req, res) => send(res, await heldoutExample(mlLanguage(req))));
   router.post(
     '/ml/classify',
     rateLimit({ windowMs: 60_000, limit: 12, standardHeaders: 'draft-8', legacyHeaders: false }),

@@ -1,0 +1,44 @@
+{
+  "example_id": "BenchmarkTest00001",
+  "split": "test",
+  "expected_label": "CWE-22",
+  "source_sha256": "0cd1618849289c510be36df8260864a0e40c158f85d5311d501ef74feda64ac4",
+  "prediction": {
+    "status": "predicted",
+    "predicted_category": "CWE-22",
+    "cwe": "CWE-22",
+    "probability": 0.9038790767131254,
+    "language": "python",
+    "supported_cwes": [
+      "CWE-22",
+      "CWE-328",
+      "CWE-330",
+      "CWE-643",
+      "CWE-79"
+    ],
+    "scope": "OWASP Benchmark Python v0.1 only; experimental category, never a confirmed vulnerability",
+    "note": "Probability is uncalibrated. BENCHMARK_NEGATIVE is not a general safety guarantee."
+  },
+  "negative_example": {
+    "example_id": "BenchmarkTest00004",
+    "split": "test",
+    "expected_label": "BENCHMARK_NEGATIVE",
+    "source_sha256": "56c7549af1563dfbb2f28aee62845e189d2e42863ca0f9ec1fef4d55a7998afa",
+    "prediction": {
+      "status": "predicted",
+      "predicted_category": "CWE-22",
+      "cwe": "CWE-22",
+      "probability": 0.6829798656105392,
+      "language": "python",
+      "supported_cwes": [
+        "CWE-22",
+        "CWE-328",
+        "CWE-330",
+        "CWE-643",
+        "CWE-79"
+      ],
+      "scope": "OWASP Benchmark Python v0.1 only; experimental category, never a confirmed vulnerability",
+      "note": "Probability is uncalibrated. BENCHMARK_NEGATIVE is not a general safety guarantee."
+    }
+  }
+}

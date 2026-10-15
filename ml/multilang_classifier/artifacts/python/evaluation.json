@@ -1,0 +1,338 @@
+{
+  "trained_at": "2026-10-15T19:18:09.804310+00:00",
+  "model": "TF-IDF Python code tokens (1\u20132 grams) + balanced LogisticRegression",
+  "dataset": {
+    "repository": "https://github.com/OWASP-Benchmark/BenchmarkPython",
+    "version": "0.1",
+    "language": "python",
+    "commit": "f1291485808b66e20ddb6b01b10dc71b3df8c8ba",
+    "license": "GPL-3.0-only",
+    "labels_file": "expectedresults-0.1.csv",
+    "labels_sha256": "0c5ae0f9a8cdcb49549c459a25651cc058c7b17d621fc064ade2bd942dad80b8",
+    "eligible_cwes": [
+      "CWE-22",
+      "CWE-328",
+      "CWE-330",
+      "CWE-643",
+      "CWE-79"
+    ],
+    "excluded_cwes": {
+      "CWE-89": {
+        "False": 11,
+        "True": 5,
+        "groups": 8
+      },
+      "CWE-611": {
+        "False": 20,
+        "True": 8,
+        "groups": 12
+      },
+      "CWE-614": {
+        "True": 24,
+        "False": 15,
+        "groups": 18
+      },
+      "CWE-601": {
+        "True": 13,
+        "False": 21,
+        "groups": 24
+      },
+      "CWE-501": {
+        "False": 19,
+        "True": 18,
+        "groups": 15
+      },
+      "CWE-94": {
+        "False": 33,
+        "True": 20,
+        "groups": 29
+      },
+      "CWE-90": {
+        "False": 13,
+        "True": 16,
+        "groups": 12
+      },
+      "CWE-502": {
+        "True": 18,
+        "False": 36,
+        "groups": 22
+      },
+      "CWE-78": {
+        "True": 13,
+        "False": 7,
+        "groups": 12
+      }
+    },
+    "counts_before_filter": {
+      "CWE-22": {
+        "True": 65,
+        "False": 103
+      },
+      "CWE-89": {
+        "False": 11,
+        "True": 5
+      },
+      "CWE-643": {
+        "False": 135,
+        "True": 51
+      },
+      "CWE-611": {
+        "False": 20,
+        "True": 8
+      },
+      "CWE-330": {
+        "True": 99,
+        "False": 227
+      },
+      "CWE-328": {
+        "True": 71,
+        "False": 80
+      },
+      "CWE-614": {
+        "True": 24,
+        "False": 15
+      },
+      "CWE-601": {
+        "True": 13,
+        "False": 21
+      },
+      "CWE-501": {
+        "False": 19,
+        "True": 18
+      },
+      "CWE-94": {
+        "False": 33,
+        "True": 20
+      },
+      "CWE-90": {
+        "False": 13,
+        "True": 16
+      },
+      "CWE-502": {
+        "True": 18,
+        "False": 36
+      },
+      "CWE-79": {
+        "False": 58,
+        "True": 31
+      },
+      "CWE-78": {
+        "True": 13,
+        "False": 7
+      }
+    },
+    "groups_before_filter": {
+      "CWE-22": 94,
+      "CWE-89": 8,
+      "CWE-643": 46,
+      "CWE-611": 12,
+      "CWE-330": 37,
+      "CWE-328": 27,
+      "CWE-614": 18,
+      "CWE-601": 24,
+      "CWE-501": 15,
+      "CWE-94": 29,
+      "CWE-90": 12,
+      "CWE-502": 22,
+      "CWE-79": 19,
+      "CWE-78": 12
+    },
+    "skipped": {},
+    "conflicting_duplicates_excluded": 0
+  },
+  "split": {
+    "method": "StratifiedGroupKFold; broad sink-independent control-flow families; every identifier, literal, API and straight-line statement count omitted from grouping",
+    "seed": 42,
+    "fold": 0,
+    "selection": "First fold meeting class support, using labels only; no score-based tuning",
+    "train_samples": 738,
+    "test_samples": 182,
+    "train_groups": 173,
+    "test_groups": 47,
+    "shared_groups": 0,
+    "shared_normalized_sources": 0,
+    "largest_family_samples": 72,
+    "train_counts": {
+      "CWE-22": 52,
+      "BENCHMARK_NEGATIVE": 482,
+      "CWE-643": 41,
+      "CWE-330": 80,
+      "CWE-328": 58,
+      "CWE-79": 25
+    },
+    "test_counts": {
+      "CWE-22": 13,
+      "BENCHMARK_NEGATIVE": 121,
+      "CWE-643": 10,
+      "CWE-330": 19,
+      "CWE-79": 6,
+      "CWE-328": 13
+    }
+  },
+  "evaluation": {
+    "scope": "Untouched grouped split from one synthetic benchmark repository; not independent real-world evaluation or an official OWASP detector score.",
+    "precision_macro": 0.7407671957671957,
+    "recall_macro": 0.9586776859504132,
+    "f1_macro": 0.8131392576891728,
+    "per_class": {
+      "BENCHMARK_NEGATIVE": {
+        "precision": 1.0,
+        "recall": 0.7520661157024794,
+        "f1-score": 0.8584905660377359,
+        "support": 121.0
+      },
+      "CWE-22": {
+        "precision": 0.52,
+        "recall": 1.0,
+        "f1-score": 0.6842105263157895,
+        "support": 13.0
+      },
+      "CWE-328": {
+        "precision": 0.6190476190476191,
+        "recall": 1.0,
+        "f1-score": 0.7647058823529411,
+        "support": 13.0
+      },
+      "CWE-330": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 19.0
+      },
+      "CWE-643": {
+        "precision": 0.5555555555555556,
+        "recall": 1.0,
+        "f1-score": 0.7142857142857143,
+        "support": 10.0
+      },
+      "CWE-79": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1-score": 0.8571428571428571,
+        "support": 6.0
+      },
+      "accuracy": 0.8351648351648352,
+      "macro avg": {
+        "precision": 0.7407671957671957,
+        "recall": 0.9586776859504132,
+        "f1-score": 0.8131392576891728,
+        "support": 182.0
+      },
+      "weighted avg": {
+        "precision": 0.9058416186987616,
+        "recall": 0.8351648351648352,
+        "f1-score": 0.8461482752141419,
+        "support": 182.0
+      }
+    },
+    "confusion_labels": [
+      "BENCHMARK_NEGATIVE",
+      "CWE-22",
+      "CWE-328",
+      "CWE-330",
+      "CWE-643",
+      "CWE-79"
+    ],
+    "confusion_matrix": [
+      [
+        91,
+        12,
+        8,
+        0,
+        8,
+        2
+      ],
+      [
+        0,
+        13,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        13,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        19,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        10,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        6
+      ]
+    ],
+    "negative_samples": 121,
+    "negative_false_positives": 30,
+    "negative_false_positive_rate": 0.24793388429752067,
+    "cli_rejection_threshold": 0.35,
+    "cli_accepted_test_samples": 182,
+    "cli_coverage": 1.0,
+    "cli_accepted_accuracy": 0.8351648351648352
+  },
+  "activation": {
+    "enabled": true,
+    "reason": "Passed the predeclared benchmark activation gate; remains experimental.",
+    "gate": {
+      "minimum_macro_f1": 0.65,
+      "maximum_negative_false_positive_rate": 0.3
+    }
+  },
+  "environment": {
+    "python": "3.12.14",
+    "scikit_learn": "1.9.1",
+    "numpy": "2.5.4",
+    "joblib": "1.6.0"
+  },
+  "reproducibility": {
+    "seed": 42,
+    "model_parameters": {
+      "C": 4.0,
+      "class_weight": "balanced",
+      "dual": false,
+      "fit_intercept": true,
+      "intercept_scaling": 1,
+      "l1_ratio": 0.0,
+      "max_iter": 400,
+      "n_jobs": null,
+      "penalty": "deprecated",
+      "random_state": 42,
+      "solver": "lbfgs",
+      "tol": 0.0001,
+      "verbose": 0,
+      "warm_start": false
+    },
+    "preprocessor_sha256": "8a107777a65d1a3455be929c7bcab46a5e514449aa422b8b44a18773f0b0b0f5",
+    "training_script_sha256": "ca27717a29c7c52c408defbdbabb4f39869e5894df506fccc780995a9757a5db"
+  },
+  "limitations": [
+    "Single synthetic OWASP Python benchmark only; no independent repository evaluation.",
+    "Broad template/control-flow grouping reduces but cannot eliminate benchmark-family leakage.",
+    "Negative means the target benchmark weakness is absent, not that the program is globally secure.",
+    "CWE probabilities are uncalibrated and classification never confirms a vulnerability.",
+    "Low-confidence/context rejection cannot guarantee out-of-distribution recognition.",
+    "Java artifacts and existing scanning/patching/regression pipelines are unchanged."
+  ],
+  "training_seconds": 15.329000000027008
+}
