@@ -1,0 +1,7 @@
+{
+  "installCommand": "npm ci --no-audit --no-fund",
+  "buildCommand": "npm run build -w @proofpatch/shared && npm run build -w @proofpatch/web",
+  "outputDirectory": "apps/web/dist",
+  "framework": null,
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+}
