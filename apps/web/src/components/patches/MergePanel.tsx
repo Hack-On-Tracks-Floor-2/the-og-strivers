@@ -55,7 +55,6 @@ export function MergePanel({ patch: initial, base }: { patch: Patch; base: strin
 
   return (
     <section className="panel merge-panel">
-      <Eyebrow>MERGE INTO THE DEVELOPER&apos;S REPOSITORY</Eyebrow>
       <h3>
         <GitMerge size={18} /> {merge ? LABELS[merge.status] : 'Approved — ready to merge'}
       </h3>

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, GitCommitHorizontal, GitPullRequest, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, GitCommitHorizontal, GitPullRequest } from 'lucide-react';
 import type { Patch, Repository } from '@proofpatch/shared';
 import { useAuth } from '../../features/auth';
 import {
@@ -86,7 +86,6 @@ export function PatchWorkspace({
       <DiffViewer key={patch.id} patch={patch} />
       <div className="patch-explanations">
         <section>
-          <Eyebrow>ROOT CAUSE</Eyebrow>
           <h3>What creates the risk</h3>
           <p>{finding?.rootCause || 'Root-cause analysis was not supplied with this patch.'}</p>
           {finding && (
@@ -99,7 +98,6 @@ export function PatchWorkspace({
           )}
         </section>
         <section>
-          <Eyebrow>PATCH RATIONALE</Eyebrow>
           <h3>Why this revision was proposed</h3>
           <p>
             {patch.explanation ||
@@ -112,7 +110,6 @@ export function PatchWorkspace({
       <section className="patch-verification">
         <div className="section-header">
           <div>
-            <Eyebrow>RECORDED EXECUTION</Eyebrow>
             <h3>Verification summary</h3>
           </div>
           <Link
@@ -135,7 +132,7 @@ export function PatchWorkspace({
                 <Status value={label} />
                 <small>
                   {record
-                    ? `${record.exitCode === null ? 'Exit not recorded' : `Exit ${record.exitCode}`} · ${formatDuration(durationMs(record.createdAt, record.completedAt))}`
+                    ? `${record.exitCode === null ? 'Exit not recorded' : `Exit ${record.exitCode}`}${(durationMs(record.createdAt, record.completedAt) ?? 0) > 0 ? ` · ${formatDuration(durationMs(record.createdAt, record.completedAt))}` : ''}`
                     : 'No execution record'}
                 </small>
                 {record?.tests && (
@@ -148,12 +145,6 @@ export function PatchWorkspace({
             );
           })}
         </div>
-        <p className="verification-disclaimer">
-          <ShieldCheck size={15} />
-          {outcome === 'checks_passed'
-            ? 'The recorded verification decision and required execution stages passed. Human review is a separate decision.'
-            : 'A generated patch or reviewer approval alone does not establish that security and regression checks passed.'}
-        </p>
       </section>
       {user?.role === 'reviewer' && patch.status === 'approved' && <MergePanel patch={patch} base={base} />}
       <div className="patch-action-bar">

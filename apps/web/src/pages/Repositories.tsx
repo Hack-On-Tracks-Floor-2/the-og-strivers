@@ -14,7 +14,6 @@ export function RepositoriesPage() {
       <PageTitle
         eyebrow="01 / SUBMITTED SOURCE"
         title="REPOSITORIES"
-        description="Every repository developers have submitted for security review."
       />
       <section className="panel">
         <div className="panel-heading">
@@ -102,8 +101,7 @@ export function RepositoryDetailPage() {
           </dl>
         </div>
         <div className="panel details">
-          <Eyebrow>LATEST ANALYSIS</Eyebrow>
-          <h2>{runs.length ? 'Follow the recorded execution.' : 'Source registered.'}</h2>
+          <h2>Latest analysis</h2>
           <p>
             {runs.length
               ? 'The latest run status comes from the backend. Inspect its events and execution evidence to understand what completed.'

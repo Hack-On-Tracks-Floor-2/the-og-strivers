@@ -4,7 +4,7 @@ import { ArrowUpRight, FolderGit2, GitPullRequest } from 'lucide-react';
 import { RepositorySchema, RepositoryInputSchema, SubmissionSchema, type Submission } from '@proofpatch/shared';
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
-import { PageTitle, Eyebrow, EmptyState, ErrorBox, Loading, date } from '../components/ui';
+import { PageTitle, EmptyState, ErrorBox, Loading, date } from '../components/ui';
 
 /** Plain-language status. Developers never see findings, patches or evidence; reviewers do. */
 const LABELS: Record<Submission['status'], string> = {
@@ -55,11 +55,9 @@ export function SubmissionsPage() {
       <PageTitle
         eyebrow="01 / SUBMIT FOR SECURITY REVIEW"
         title="REPOSITORIES"
-        description="Add your repository. ProofPatch scans it and a security reviewer handles the findings and fixes."
       />
       <section className="panel repository-form">
-        <Eyebrow>ADD A REPOSITORY</Eyebrow>
-        <h2>Start with your source.</h2>
+        <h2>Add a repository</h2>
         <p>Paste a public GitHub repository. The security scan starts automatically.</p>
         <form onSubmit={submit}>
           <label htmlFor="repo-url" className="sr-only">

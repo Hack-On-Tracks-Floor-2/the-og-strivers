@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { z } from 'zod';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Eye, EyeOff, LockKeyhole, FlaskConical } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Eye, EyeOff, FlaskConical } from 'lucide-react';
 import { UserSchema, LoginSchema, RegisterSchema } from '@proofpatch/shared';
-import { Brand, Eyebrow, ErrorBox, Loading } from '../components/ui';
+import { Brand, ErrorBox, Loading } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 
@@ -45,7 +45,6 @@ export function AuthPage({
     return (
       <main className="auth-page">
         <section className="auth-card switch-account">
-          <Eyebrow>ALREADY SIGNED IN</Eyebrow>
           <h1>You're signed in as a {other}.</h1>
           <p>
             {user.email} is using this browser. Sign out to continue to the{' '}
@@ -113,9 +112,6 @@ export function AuthPage({
       </header>
       <main className="auth-main">
         <div className="auth-intro">
-          <Eyebrow>
-            {role === 'developer' ? '01 / DEVELOPER ACCESS' : '02 / REVIEWER ACCESS'}
-          </Eyebrow>
           <h1>
             {register ? (
               <>
@@ -138,23 +134,9 @@ export function AuthPage({
               </>
             )}
           </h1>
-          <p>
-            {role === 'developer'
-              ? 'Submit your repositories for security review and follow their status. Findings and fixes are handled by the security reviewer.'
-              : 'A deliberate workspace for independent security review. Every decision starts with evidence.'}
-          </p>
-          <span className="auth-footnote mono">
-            <LockKeyhole size={14} /> PRIVATE WORKSPACE / SECURE SESSION
-          </span>
         </div>
         <form className="auth-form" onSubmit={submit}>
-          <Eyebrow>PROOFPATCH / {register ? 'CREATE ACCOUNT' : 'PORTAL LOGIN'}</Eyebrow>
           <h2>{register ? 'Make it official.' : 'Welcome back.'}</h2>
-          <p>
-            {register
-              ? 'Create your developer workspace.'
-              : `Sign in to your ${role === 'reviewer' ? 'security reviewer' : 'developer'} workspace.`}
-          </p>
           {!register && demoAccounts[role] && (
             <div className="demo-login">
               <button
@@ -165,11 +147,11 @@ export function AuthPage({
               >
                 <FlaskConical size={16} aria-hidden="true" /> Fill demo credentials
               </button>
-              <p role="status" aria-live="polite">
-                {demoFilled
-                  ? 'Demo credentials filled. Select Enter workspace to sign in.'
-                  : `Use the local demo ${role === 'reviewer' ? 'reviewer' : 'developer'} account.`}
-              </p>
+              {demoFilled && (
+                <p role="status" aria-live="polite">
+                  Filled. Select Enter workspace.
+                </p>
+              )}
             </div>
           )}
           {error && <ErrorBox message={error} />}{' '}
@@ -232,16 +214,12 @@ export function AuthPage({
             {busy ? 'Please wait…' : register ? 'Create account' : 'Enter workspace'}
             <ArrowUpRight size={18} />
           </button>
-          {role === 'developer' ? (
+          {role === 'developer' && (
             <p className="form-bottom">
               {register ? 'Already have an account?' : 'New to ProofPatch?'}{' '}
               <Link to={`/developer/${register ? 'login' : 'register'}`}>
                 {register ? 'Log in' : 'Create account'}
               </Link>
-            </p>
-          ) : (
-            <p className="form-bottom">
-              Reviewer access is provisioned by your workspace administrator.
             </p>
           )}
         </form>

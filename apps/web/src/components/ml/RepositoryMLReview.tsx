@@ -51,10 +51,9 @@ export function RepositoryMLReview() {
   return (
     <section className="security-intelligence" aria-label="Repository ML findings">
       <div className="intelligence-heading">
-        <div><span className="eyebrow">AUTOMATIC / FINDING-LEVEL CLASSIFICATION</span><h2>Repository predictions</h2></div>
+        <div><h2>Repository predictions</h2></div>
         {data && <Status value={data.run.status} />}
       </div>
-      <p>Saved predictions accompany findings from the submitted source revision. ML does not confirm vulnerabilities, change scanner severity, or determine approval.</p>
       {index.error && <ErrorBox message={index.error} retry={index.reload} />}
       {index.loading ? <Loading /> : (
         <RunScope repositories={repositories} runs={runs} repositoryId={repositoryId} runId={selected?.id ?? ''}
@@ -93,17 +92,14 @@ export function RepositoryMLReview() {
                 {ml && <><dt>Recorded</dt><dd>{date(ml.createdAt)}</dd></>}
               </dl>
               {ml?.comparison === 'disagrees' && <p className="analysis-notice" role="status">Scanner and ML disagree. The scanner finding is retained; a reviewer must assess its evidence.</p>}
-              {ml?.comparison === 'agrees' && <p>Scanner and ML categories agree. This is not verification or execution evidence.</p>}
               {ml?.reason && <p role="status">{ml.reason}</p>}
               {!ml && <p role="status">{ACTIVE_RUNS.has(data.run.status)
                 ? 'Automatic ML classification has not been recorded yet. The original finding remains available while analysis continues.'
                 : 'No saved ML record exists for this finding. Older analyses need a new scan to capture source-bound predictions; nothing is inferred from the current repository HEAD.'}</p>}
-              {ml?.prediction?.scope && <p>{ml.prediction.scope}</p>}
               <Link className="text-button" to={`/reviewer/app/findings?repository=${repositoryId}&run=${selected!.id}`}>Inspect original findings</Link>
               {ml?.sourceSha256 && <details><summary>Prediction provenance</summary>
                 <p>Repository: {ml.repositoryUrl}</p><p>File SHA-256: <code>{ml.sourceSha256}</code></p>
                 {ml.snippet && <p>Classified snippet SHA-256: <code>{ml.snippet.sha256}</code></p>}
-                <p>Source text was parsed as data and was not executed by ML.</p>
               </details>}
             </article>
           ))}

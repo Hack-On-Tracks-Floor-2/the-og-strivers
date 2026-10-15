@@ -1,14 +1,20 @@
+import { HealthSchema } from '@proofpatch/shared';
 import { PageTitle, Eyebrow, Status } from '../components/ui';
 import { useAuth } from '../features/auth';
+import { useResource } from '../hooks/useResource';
+import { api } from '../lib/api';
 export function SettingsPage() {
   const { user } = useAuth();
+  const health = useResource(() => api('/health', HealthSchema));
+  const ready = health.data?.analysis === 'available';
+  const capabilities: [string, boolean, string?][] = [
+    ['AI providers (in fallback order)', !!health.data?.ai?.length, health.data?.ai?.join(' → ')],
+    ['Sandbox', health.data?.sandbox === 'docker', health.data?.sandbox === 'docker' ? 'Docker, network off' : undefined],
+    ['Find, patch & prove', ready],
+  ];
   return (
     <>
-      <PageTitle
-        eyebrow="07 / WORKSPACE PREFERENCES"
-        title="SETTINGS"
-        description="Your account and the capabilities available to this workspace."
-      />
+      <PageTitle title="SETTINGS" />
       <section className="panel details">
         <Eyebrow>YOUR ACCOUNT</Eyebrow>
         <dl>
@@ -18,27 +24,19 @@ export function SettingsPage() {
           <dd>{user?.email}</dd>
           <dt>Role</dt>
           <dd>{user?.role}</dd>
-          <dt>Authentication</dt>
-          <dd>Server-side session / HTTP-only cookie</dd>
         </dl>
       </section>
       <section className="panel details">
         <Eyebrow>AGENT CAPABILITIES</Eyebrow>
-        {[
-          'Repository intelligence',
-          'Vulnerability detection',
-          'Patch generation',
-          'Isolated verification',
-        ].map((item) => (
+        {capabilities.map(([item, on, detail]) => (
           <div className="capability-row" key={item}>
-            <span>{item}</span>
-            <Status value="not_configured" />
+            <span>
+              {item}
+              {detail && <small> · {detail}</small>}
+            </span>
+            <Status value={health.loading ? 'pending' : on ? 'available' : 'not_configured'} />
           </div>
         ))}
-        <p>
-          Capabilities are configured on the server. API keys and reviewer credentials are never
-          exposed to the frontend.
-        </p>
       </section>
     </>
   );

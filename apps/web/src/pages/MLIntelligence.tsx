@@ -110,9 +110,6 @@ export function MLIntelligencePage() {
       <PageTitle
         eyebrow="EXPERIMENTAL / LANGUAGE-SPECIFIC CLASSIFICATION"
         title="ML INTELLIGENCE"
-        description={user?.role === 'reviewer'
-          ? 'Review automatic predictions attached to repository findings. Predictions are experimental estimates, not confirmed vulnerabilities.'
-          : 'Inspect evaluated models and explore source-text classification. Repository findings remain in the reviewer workspace.'}
       />
       {user?.role === 'reviewer' && <RepositoryMLReview />}
       {catalog.loading ? (
@@ -124,7 +121,6 @@ export function MLIntelligencePage() {
           <section className="panel details">
             <div className="section-header">
               <div>
-                <span className="eyebrow">MODEL AVAILABILITY</span>
                 <h2>Language-specific models</h2>
               </div>
             </div>
@@ -151,7 +147,6 @@ export function MLIntelligencePage() {
               {models?.map((entry) => (
                 <li key={entry.language}>
                   <strong>{languageName[entry.language]}</strong> · {entry.status}
-                  {entry.reason ? ` · ${entry.reason}` : ''}
                 </li>
               ))}
             </ul>
@@ -161,16 +156,13 @@ export function MLIntelligencePage() {
               <section className="panel details">
                 <div className="section-header">
                   <div>
-                    <span className="eyebrow">SAVED TRAINED MODEL / {languageName[language]}</span>
                     <h2>{info.model}</h2>
                   </div>
                   <Status value={selected.status} />
                 </div>
                 <p>
-                  Dataset version {info.dataset.version} ·{' '}
-                  {info.training.trainSamples.toLocaleString()} training examples ·{' '}
-                  {info.training.testSamples.toLocaleString()} held-out examples. Shared split
-                  groups: {info.training.sharedGroups}.
+                  {info.training.trainSamples.toLocaleString()} training ·{' '}
+                  {info.training.testSamples.toLocaleString()} held-out examples
                 </p>
                 <dl>
                   <dt>Model version</dt>
@@ -190,8 +182,6 @@ export function MLIntelligencePage() {
                   <dt>Dataset license</dt>
                   <dd>{info.dataset.license}</dd>
                 </dl>
-                {info.reason && <p role="status">{info.reason}</p>}
-                {info.activation && <p role="status">{info.activation.reason}</p>}
               </section>
               <div className="repository-metrics">
                 {[
@@ -206,21 +196,13 @@ export function MLIntelligencePage() {
                   <div className="repository-metric" key={label}>
                     <span>{label}</span>
                     <strong>{percent(Number(value))}</strong>
-                    <small>Recorded grouped held-out evaluation</small>
                   </div>
                 ))}
               </div>
-              <p className="scope-explanation">
-                These scores apply to the recorded {languageName[language]} dataset split. A negative
-                classification is not a safety guarantee. Performance on other languages or
-                production repositories has not been established. Disabled models remain visible
-                for evaluation and cannot classify snippets here.
-              </p>
               <details className="panel details">
                 <summary>Model Playground</summary>
                 <div className="section-header">
                   <div>
-                    <span className="eyebrow">REAL MODEL INFERENCE</span>
                     <h2>Classify a {languageName[language]} snippet</h2>
                   </div>
                   <button
@@ -231,14 +213,9 @@ export function MLIntelligencePage() {
                     {pending === 'example' ? 'Loading held-out example…' : 'Load held-out example'}
                   </button>
                 </div>
-                <p>
-                  Submitted source is treated as text and is never executed. The first prediction
-                  may take a moment while Python loads the saved model.
-                </p>
                 {!canClassify && (
                   <p role="status">
-                    Classification is disabled for this model.{' '}
-                    {selected.reason ?? info.reason ?? info.activation?.reason}
+                    Classification is disabled for this model.
                   </p>
                 )}
                 <form onSubmit={classify}>
@@ -307,11 +284,6 @@ export function MLIntelligencePage() {
                       </p>
                     )}
                     {result.reason && <p>{result.reason}</p>}
-                    {result.note && <p>{result.note}</p>}
-                    <p>
-                      This category estimate is not a confirmed vulnerability or execution evidence.
-                    </p>
-                    <p>{result.scope}</p>
                     <code>{result.modelVersion}</code>
                   </section>
                 )}

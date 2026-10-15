@@ -1,20 +1,16 @@
 import { ArrowLeft, ArrowUpRight, Code2, Shield } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Brand, Eyebrow } from '../components/ui';
+import { Brand } from '../components/ui';
 
 type PortalRole = 'developer' | 'reviewer';
 const portals = {
   developer: {
-    eyebrow: 'BUILD WITH CONFIDENCE',
     title: 'DEVELOPERS',
     description: 'Submit your repository for a security review and follow its status.',
-    footer: '01 / SUBMIT & TRACK',
   },
   reviewer: {
-    eyebrow: 'TURN RISK INTO EVIDENCE',
     title: 'SECURITY REVIEWERS',
     description: 'Run scans. Investigate findings. Review AI-generated patches and their test evidence.',
-    footer: '02 / INVESTIGATE & REVIEW',
   },
 } as const;
 
@@ -24,7 +20,6 @@ function PortalPanel({ role, single = false }: { role: PortalRole; single?: bool
   return (
     <section className={`portal-panel portal-panel--${role}`} aria-labelledby={`${role}-heading`}>
       <div className="portal-content">
-        <Eyebrow>{portal.eyebrow}</Eyebrow>
         <Heading id={`${role}-heading`} className="portal-heading">
           {role === 'reviewer' ? (
             <>
@@ -50,12 +45,6 @@ function PortalPanel({ role, single = false }: { role: PortalRole; single?: bool
           )}
         </div>
       </div>
-      <footer className="portal-panel-footer mono">
-        <span>{portal.footer}</span>
-        <span className="portal-footer-cross" aria-hidden="true">
-          +
-        </span>
-      </footer>
     </section>
   );
 }

@@ -15,6 +15,17 @@ import { useResource } from '../hooks/useResource';
 import { PageTitle, EmptyState, ErrorBox, Loading, Status, Eyebrow, date } from '../components/ui';
 import { LiveRun } from '../components/live/LiveRun';
 const ACTIVE = ['received', 'queued', 'mapping', 'analyzing', 'patching', 'verifying'];
+/** "Groq (m) → Groq key 2 (m) → Gemini (m)" → "Groq ×2 → Gemini". */
+function providerSummary(providers: string[]) {
+  const groups: [string, number][] = [];
+  for (const p of providers) {
+    const name = p.replace(/ \(.*\)$/, '').replace(/ key \d+$/, '');
+    const last = groups[groups.length - 1];
+    if (last?.[0] === name) last[1]++;
+    else groups.push([name, 1]);
+  }
+  return groups.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(' → ');
+}
 export function ScannerPage() {
   const [params, setParams] = useSearchParams();
   const health = useResource(() => api('/health', HealthSchema));
@@ -81,18 +92,16 @@ export function ScannerPage() {
       <PageTitle
         eyebrow="02 / ANALYSIS CONTROL"
         title="SECURITY SCANNER"
-        description="Request an analysis. Follow the real state of every job."
       />
       {!health.loading && (
         <div className="capability-banner">
           <Info size={19} />
           <div>
-            <strong>{available ? 'Agent pipeline ready' : 'Agent pipeline unavailable'}</strong>
+            <strong>{available ? 'Pipeline ready' : 'Pipeline unavailable'}</strong>
             <p>
               {available
-                ? `Clones the repository, runs its tests in an offline Docker sandbox, locates the bug, writes a patch and proves it. AI: ${health.data?.ai?.join(' → ') ?? ''}.`
-                : (health.data?.reason ??
-                  'Repository inspection and automated scanning are not configured.')}
+                ? `AI: ${providerSummary(health.data?.ai ?? [])}`
+                : (health.data?.reason ?? 'Analysis is not configured on the server.')}
             </p>
           </div>
           <Status value={available ? 'available' : 'not_configured'} />

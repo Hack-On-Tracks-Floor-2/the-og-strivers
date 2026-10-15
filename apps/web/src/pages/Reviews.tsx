@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, Search, RefreshCw, X } from 'lucide-react';
-import { PatchSchema, ReviewDecisionSchema, DecisionInputSchema } from '@proofpatch/shared';
+import { PatchSchema, ReviewDecisionSchema, DecisionInputSchema, RepositorySchema } from '@proofpatch/shared';
 import { api } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { loadRunBundle } from '../hooks/useSecurityData';
@@ -22,6 +22,7 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
   const [params, setParams] = useSearchParams();
   const queue = useResource(() => api('/reviews/queue', z.array(PatchSchema)));
   const history = useResource(() => api('/reviews/decisions', z.array(ReviewDecisionSchema)));
+  const repositories = useResource(() => api('/repositories', z.array(RepositorySchema)));
   const runIds = [...new Set((queue.data ?? []).map((patch) => patch.runId))].sort();
   const contexts = useResource(async () => {
     const results = await Promise.allSettled(runIds.map(loadRunBundle));
@@ -77,7 +78,7 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
       patch,
       context,
       finding,
-      repository: repositoryLabel(context?.run, []),
+      repository: repositoryLabel(context?.run, repositories.data ?? []),
       verification: context ? verificationState(patch, context.verification) : 'not_available',
     };
   });
@@ -149,11 +150,6 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
       <PageTitle
         eyebrow={decisions ? 'RECORDED HUMAN JUDGMENT' : 'SECURITY REVIEW WORKSPACE'}
         title={decisions ? 'REVIEW DECISIONS' : 'REVIEW QUEUE'}
-        description={
-          decisions
-            ? 'Trace each decision to its rationale, reviewer, and underlying patch.'
-            : 'Prioritize submitted patches, inspect the source revision, and weigh the execution evidence.'
-        }
         action={
           <button className="button secondary" onClick={refresh}>
             <RefreshCw size={15} /> Refresh
@@ -287,7 +283,10 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
                   ),
                 ].map((id) => (
                   <option key={id} value={id}>
-                    Repository {id.slice(0, 8)}
+                    {(() => {
+                      const repo = repositories.data?.find((item) => item.id === id);
+                      return repo ? `${repo.owner}/${repo.name}` : `Repository ${id.slice(0, 8)}`;
+                    })()}
                   </option>
                 ))}
               </select>
@@ -404,15 +403,10 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
               />
             )}
           </div>
-          <p className="chart-footnote">
-            Repository names and reviewer assignments are not exposed by the reviewer API.
-            Repository IDs are shown as recorded references.
-          </p>
           {selected && (
             <div ref={detail} className="review-detail" tabIndex={-1}>
               <div className="review-detail-heading">
                 <div>
-                  <span className="eyebrow">REVIEW IN CONTEXT</span>
                   <h2>Finding → Revision → Evidence → Decision</h2>
                 </div>
                 <button className="icon-label" onClick={() => update('patch', '')}>
@@ -459,7 +453,6 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
               <section className="panel details review-decision">
                 <div className="section-header">
                   <div>
-                    <span className="eyebrow">HUMAN REVIEW</span>
                     <h2>Record your judgment</h2>
                   </div>
                   <Status value={selected.status} />
@@ -553,7 +546,6 @@ export function ReviewsPage({ decisions = false }: { decisions?: boolean }) {
         }}
         aria-labelledby="decision-confirm-title"
       >
-        <span className="eyebrow">CONFIRM REVIEW DECISION</span>
         <h2 id="decision-confirm-title">
           {confirmation === 'approved' ? 'Approve this patch?' : 'Reject this patch?'}
         </h2>

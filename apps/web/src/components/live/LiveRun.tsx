@@ -252,7 +252,7 @@ function Terminal({ lines, container, live }: { lines: string[]; container?: Liv
             </div>
           ))
         ) : (
-          <div className="term-empty">{live ? (runningContainer ? 'Container is running; this step prints its output when it finishes…' : 'Waiting for the sandbox to start…') :'No live output for this run. Press “Replay this run” to replay its recorded sandbox logs.'}</div>
+          <div className="term-empty">{live ? (runningContainer ? 'Running…' : 'Waiting for the sandbox to start…') :'No live output.'}</div>
         )}
         {live && <span className="term-cursor">▌</span>}
       </div>

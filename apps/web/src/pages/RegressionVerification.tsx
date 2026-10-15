@@ -47,7 +47,6 @@ export function ReferenceRegression({ comparison = false }: { comparison?: boole
     <section className="panel details">
       <div className="section-header">
         <div>
-          <span className="eyebrow">EXECUTED REFERENCE SCENARIO</span>
           <h2>{report.scenario}</h2>
         </div>
         <Status
@@ -187,7 +186,6 @@ export function RegressionVerificationPage() {
       <PageTitle
         eyebrow="EXECUTED CHECKS / RECORDED EVIDENCE"
         title="REGRESSION VERIFICATION"
-        description="Inspect baseline, reproduction, security retest, and regression outcomes. Missing execution remains incomplete."
       />
       {scoped ? (
         <>
@@ -223,7 +221,6 @@ export function PatchStudioPage() {
       <PageTitle
         eyebrow="RECORDED REGRESSION REFERENCE"
         title="PATCH STUDIO"
-        description="Current source and proposed revision from the executed reference fixture. This comparison does not create a repository finding."
       />
       <ReferenceRegression comparison />
     </>

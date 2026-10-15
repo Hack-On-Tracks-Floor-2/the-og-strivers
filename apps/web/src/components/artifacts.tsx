@@ -128,7 +128,6 @@ export function EvidenceTimeline({
             <summary>
               <span className="timeline-dot" />
               <div className="evidence-summary">
-                <span className="eyebrow">{record ? 'PATCH EXECUTION' : 'RUN ACTIVITY'}</span>
                 <h3>{item.title}</h3>
                 <time>{date(item.time)}</time>
               </div>

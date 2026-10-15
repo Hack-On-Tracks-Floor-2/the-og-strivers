@@ -117,7 +117,6 @@ export function ArtifactsPage({
         <PageTitle
           eyebrow={copy.eyebrow}
           title={kind === 'patches' && user!.role === 'reviewer' ? 'PATCH INSPECTION' : copy.title}
-          description={copy.description}
         />
       )}
       {index.data && (

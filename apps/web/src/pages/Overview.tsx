@@ -6,7 +6,7 @@ import { useWorkspaceIndex } from '../hooks/useSecurityData';
 import { useResource } from '../hooks/useResource';
 import { api } from '../lib/api';
 import { repositoryLabel } from '../lib/security-data';
-import { PageTitle, ErrorBox, Status, Eyebrow, date } from '../components/ui';
+import { PageTitle, ErrorBox, Status, date } from '../components/ui';
 import {
   IntelligenceSkeleton,
   SecurityIntelligence,
@@ -29,11 +29,6 @@ export function OverviewPage() {
       <PageTitle
         eyebrow="EVIDENCE-DRIVEN SECURITY"
         title={reviewer ? 'REVIEW INTELLIGENCE' : 'SECURITY INTELLIGENCE'}
-        description={
-          reviewer
-            ? 'Assess submitted revisions, inspect their evidence, and make an informed decision.'
-            : 'Understand repository risk, follow proposed revisions, and inspect the proof behind each result.'
-        }
         action={
           <Link className="button primary" to={`${base}/${reviewer ? 'queue' : 'repositories'}`}>
             {reviewer ? 'Open review queue' : 'Add repository'}
@@ -96,7 +91,6 @@ export function OverviewPage() {
             <section className="panel recent-run-panel">
               <div className="panel-heading">
                 <div>
-                  <Eyebrow>WORKSPACE ACTIVITY</Eyebrow>
                   <h2>Recent analysis runs</h2>
                 </div>
               </div>

@@ -53,7 +53,6 @@ createRoot(document.getElementById('root')!).render(
             path="*"
             element={
               <div className="not-found">
-                <span className="eyebrow">404 / OFF THE RAIL</span>
                 <h1>PAGE NOT FOUND.</h1>
                 <Link className="button primary" to="/">
                   Back to ProofPatch ↗

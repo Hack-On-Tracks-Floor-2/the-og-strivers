@@ -10,7 +10,7 @@ import {
   verificationState,
 } from '../../lib/security-data';
 import { RunScope } from '../../components/RunScope';
-import { EmptyState, ErrorBox, Eyebrow, Status, date } from '../../components/ui';
+import { EmptyState, ErrorBox, Status, date } from '../../components/ui';
 const IntelligenceCharts = lazy(() => import('./IntelligenceCharts'));
 export function IntelligenceSkeleton() {
   return (
@@ -74,8 +74,7 @@ export function SecurityIntelligence({
     <section className="security-intelligence">
       <div className="intelligence-heading">
         <div>
-          <Eyebrow>REPOSITORY INTELLIGENCE</Eyebrow>
-          <h2>Evidence in context.</h2>
+          <h2>Repository analysis</h2>
         </div>
         {data && <Status value={data.run.status} />}
       </div>
@@ -120,44 +119,37 @@ export function SecurityIntelligence({
           )}
           <div className="repository-metrics">
             {[
-              { label: 'Total findings', value: findings.length, detail: 'Distinct finding IDs' },
+              { label: 'Total findings', value: findings.length },
               {
                 label: 'Critical / High',
                 value: findings.filter((finding) => ['critical', 'high'].includes(finding.severity))
                   .length,
-                detail: 'Backend severity values',
               },
               {
                 label: 'Files analyzed',
                 value: metadata.filesAnalyzed ?? 'Not recorded',
-                detail: 'Recorded source-search coverage',
               },
               {
                 label: 'Patch attempts',
                 value: data.patches.length,
-                detail: 'Persisted patch records',
               },
               {
                 label: 'Checks verified',
                 value: data.patches.filter(
                   (patch) => verificationState(patch, data.verification) === 'checks_passed',
                 ).length,
-                detail: 'Evidence-backed execution decisions',
               },
               {
                 label: 'Regression failures',
                 value: failedRegression,
-                detail: 'Failed regression stages',
               },
               {
                 label: 'Languages detected',
-                value: metadata.languages.length || 'Not recorded',
-                detail: metadata.languages.join(', ') || 'No language metadata supplied',
+                value: metadata.languages.join(', ') || 'Not recorded',
               },
               {
                 label: 'Latest completed analysis',
                 value: latestCompleted ? date(latestCompleted.updatedAt) : 'Not recorded',
-                detail: 'Analysis ready for review or verified',
               },
             ].map((metric) => (
               <div className="repository-metric" key={metric.label}>
@@ -165,7 +157,7 @@ export function SecurityIntelligence({
                 <strong className={typeof metric.value === 'number' ? '' : 'text-metric'}>
                   {metric.value}
                 </strong>
-                <small>{metric.detail}</small>
+
               </div>
             ))}
           </div>
@@ -177,43 +169,39 @@ export function SecurityIntelligence({
               base={`/${user?.role ?? 'developer'}/app`}
             />
           </Suspense>
-          <section className="panel technology-panel">
-            <div>
-              <Eyebrow>DETECTED TECHNOLOGY</Eyebrow>
-              <h2>Repository stack</h2>
-              <p>Source metadata from the repository record and recorded mapping events.</p>
-            </div>
-            <dl>
-              <dt>Languages</dt>
-              <dd>
-                {metadata.languages.length
-                  ? metadata.languages.map((language) => (
-                      <span className="technology-tag" key={language}>
-                        {language}
-                      </span>
-                    ))
-                  : 'Not recorded'}
-              </dd>
-              <dt>Frameworks</dt>
-              <dd>
-                {metadata.frameworks.length
-                  ? metadata.frameworks.map((framework) => (
-                      <span className="technology-tag" key={framework}>
-                        {framework}
-                      </span>
-                    ))
-                  : 'Not recorded'}
-              </dd>
-              <dt>Commit</dt>
-              <dd>
-                <code>{metadata.commitSha ?? 'No commit reference supplied'}</code>
-              </dd>
-            </dl>
-            <p className="chart-footnote">
-              Language byte counts are not supplied by the API, so language percentages are not
-              displayed.
-            </p>
-          </section>
+          {(metadata.languages.length > 0 || metadata.frameworks.length > 0 || !!metadata.commitSha) && (
+            <section className="panel technology-panel">
+              <div>
+                <h2>Repository stack</h2>
+              </div>
+              <dl>
+                <dt>Languages</dt>
+                <dd>
+                  {metadata.languages.length
+                    ? metadata.languages.map((language) => (
+                        <span className="technology-tag" key={language}>
+                          {language}
+                        </span>
+                      ))
+                    : 'Not recorded'}
+                </dd>
+                <dt>Frameworks</dt>
+                <dd>
+                  {metadata.frameworks.length
+                    ? metadata.frameworks.map((framework) => (
+                        <span className="technology-tag" key={framework}>
+                          {framework}
+                        </span>
+                      ))
+                    : 'Not recorded'}
+                </dd>
+                <dt>Commit</dt>
+                <dd>
+                  <code>{metadata.commitSha ?? 'No commit reference supplied'}</code>
+                </dd>
+              </dl>
+            </section>
+          )}
         </>
       )}
     </section>

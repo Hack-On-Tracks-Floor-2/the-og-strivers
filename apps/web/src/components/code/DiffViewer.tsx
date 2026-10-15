@@ -249,11 +249,7 @@ export function DiffViewer({
       )}
       <div className="comparison-footer">
         <span className="mono">
-          {mode === 'comparison'
-            ? 'Synchronized scrolling · Drag the center divider to resize'
-            : mode === 'unified'
-              ? 'Recorded unified Git diff'
-              : 'Generated security test · Read only'}
+          {mode === 'security' ? 'Generated security test' : ''}
         </span>
         <span role="status" aria-live="polite">
           {notice}

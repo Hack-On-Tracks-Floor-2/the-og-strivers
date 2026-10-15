@@ -14,12 +14,11 @@ import {
   ChevronRight,
   ClipboardCheck,
   ListChecks,
-  ExternalLink,
   BrainCircuit,
   FlaskConical,
 } from 'lucide-react';
 import { z } from 'zod';
-import { Brand, Eyebrow, Loading, ErrorBox } from '../components/ui';
+import { Brand, Loading, ErrorBox } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 import { HealthSchema } from '@proofpatch/shared';
@@ -89,10 +88,8 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
           <span className="workspace-avatar">{role === 'developer' ? 'D' : 'S'}</span>
           <div>
             <strong>{role === 'developer' ? 'Developer workspace' : 'Review workspace'}</strong>
-            <span>PERSONAL / FOUNDATION</span>
           </div>
         </div>
-        <Eyebrow>WORKSPACE</Eyebrow>
         <nav>
           {nav.map(([path, label, Icon]) => (
             <NavLink
@@ -110,16 +107,8 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
         <div className="sidebar-bottom">
           <div className="integration-card">
             <span className="integration-dot" />
-            <strong>{pipelineReady ? 'Agent pipeline ready' : 'Agent pipeline offline'}</strong>
-            <p>
-              {pipelineReady
-                ? 'Find, patch & prove runs in an offline Docker sandbox.'
-                : 'Analysis requests are saved; execution is not configured.'}
-            </p>
+            <strong>{pipelineReady ? 'Pipeline ready' : 'Pipeline offline'}</strong>
           </div>
-          <a className="docs-link" href="https://github.com" target="_blank" rel="noreferrer">
-            GitHub <ExternalLink size={13} />
-          </a>
           <div className="account">
             <span className="account-avatar">{auth.user.name.slice(0, 2).toUpperCase()}</span>
             <div>
@@ -146,18 +135,11 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
             <ChevronRight size={13} />
             <strong>{current}</strong>
           </div>
-          <span className="workspace-mode mono">
-            <span className="live-indicator" /> LOCAL WORKSPACE
-          </span>
         </header>
         {error && <ErrorBox message={error} />}
         <main className="workspace-content">
           <Outlet />
         </main>
-        <footer className="workspace-footer mono">
-          <span>PROOFPATCH AI / FOUNDATION 01</span>
-          <span>EVERY CLAIM NEEDS EVIDENCE.</span>
-        </footer>
       </div>
     </div>
   );

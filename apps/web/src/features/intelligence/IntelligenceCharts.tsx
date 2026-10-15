@@ -23,7 +23,7 @@ import {
   severityOrder,
   type RunBundle,
 } from '../../lib/security-data';
-import { Eyebrow, date } from '../../components/ui';
+import { date } from '../../components/ui';
 
 const categoryColors = [
   '#D7FF3F',
@@ -38,12 +38,11 @@ const categoryColors = [
 const severityColors = ['#EF8585', '#E5A476', '#D0BC76', '#82B9AB', '#969BAB'];
 const percent = (count: number, total: number) =>
   total ? `${((count / total) * 100).toFixed(1)}%` : '0%';
-function ChartEmpty({ text }: { text: string }) {
+function ChartEmpty(_: { text?: string }) {
   return (
     <div className="chart-empty">
       <span className="chart-empty-ring" />
-      <h3>No distribution yet</h3>
-      <p>{text}</p>
+      <h3>No data yet</h3>
     </div>
   );
 }
@@ -103,7 +102,6 @@ export default function IntelligenceCharts({
         <section className="panel chart-panel">
           <div className="section-header">
             <div>
-              <Eyebrow>VULNERABILITY MIX</Eyebrow>
               <h2>Category distribution</h2>
             </div>
             <span className="count">{findings.length} findings</span>
@@ -172,10 +170,6 @@ export default function IntelligenceCharts({
                   ))}
                 </div>
               </div>
-              <p className="chart-footnote">
-                Shares use distinct finding IDs in this run, including unclassified findings. Select
-                a category to inspect its findings.
-              </p>
             </>
           ) : (
             <ChartEmpty text="Category shares appear when this analysis records vulnerability findings." />
@@ -184,7 +178,6 @@ export default function IntelligenceCharts({
         <section className="panel chart-panel">
           <div className="section-header">
             <div>
-              <Eyebrow>RISK CLASSIFICATION</Eyebrow>
               <h2>Severity distribution</h2>
             </div>
           </div>
@@ -249,10 +242,6 @@ export default function IntelligenceCharts({
                   </Link>
                 ))}
               </div>
-              <p className="chart-footnote">
-                Severity comes from the finding record. Model confidence does not determine this
-                classification.
-              </p>
             </>
           ) : (
             <ChartEmpty text="No severity values have been recorded for this analysis." />
@@ -263,7 +252,6 @@ export default function IntelligenceCharts({
         <section className="panel chart-panel">
           <div className="section-header">
             <div>
-              <Eyebrow>REMEDIATION WORKFLOW</Eyebrow>
               <h2>Finding status</h2>
             </div>
           </div>
@@ -287,14 +275,10 @@ export default function IntelligenceCharts({
           ) : (
             <ChartEmpty text="A proposed patch and a verified result are tracked as separate states." />
           )}
-          <p className="chart-footnote">
-            Latest patch attempt per finding. Automated checks and human review are distinct.
-          </p>
         </section>
         <section className="panel chart-panel">
           <div className="section-header">
             <div>
-              <Eyebrow>RECORDED HISTORY</Eyebrow>
               <h2>Analysis elapsed time</h2>
             </div>
           </div>
@@ -350,10 +334,6 @@ export default function IntelligenceCharts({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <p className="chart-footnote">
-                Elapsed time between run creation and its last settled update. Each point is an
-                actual run, including failed attempts.
-              </p>
             </>
           ) : (
             <div className="chart-empty">

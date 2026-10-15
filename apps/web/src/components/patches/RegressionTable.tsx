@@ -1,5 +1,4 @@
 import type { VerificationRun } from '@proofpatch/shared';
-import { Eyebrow } from '../ui';
 
 type Outcome = 'passed' | 'failed' | 'error' | 'skipped' | 'missing';
 const label: Record<Outcome, string> = { passed: 'Pass', failed: 'Fail', error: 'Error', skipped: 'Skip', missing: '—' };
@@ -29,16 +28,11 @@ export function RegressionTable({ stages }: { stages: VerificationRun[] }) {
 
   return (
     <section className="regression-table">
-      <Eyebrow>REGRESSION GATE · TEST BY TEST</Eyebrow>
       <h3 className={broken ? 'failed' : 'passed'}>
         {broken
           ? `${broken} test${broken > 1 ? 's' : ''} that passed before the patch no longer pass`
           : `All ${kept} tests that passed before the patch still pass`}
       </h3>
-      <p>
-        The repository&apos;s own suite, run in the sandbox before the patch (baseline) and after it. A regression is any
-        test that passed before and does not pass after. New tests are the generated security test.
-      </p>
       <div className="regression-scroll">
         <table>
           <thead>

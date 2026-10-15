@@ -18,22 +18,20 @@ export function Eyebrow({ children }: { children: ReactNode }) {
   return <div className="eyebrow">{children}</div>;
 }
 export function PageTitle({
-  eyebrow,
   title,
   description,
   action,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
     <div className="page-title">
       <div>
-        <Eyebrow>{eyebrow}</Eyebrow>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {action}
     </div>
@@ -41,11 +39,11 @@ export function PageTitle({
 }
 export function EmptyState({
   title,
-  description,
   action,
 }: {
   title: string;
-  description: string;
+  /** Kept for callers; empty states show the title only. */
+  description?: string;
   action?: ReactNode;
 }) {
   return (
@@ -53,9 +51,7 @@ export function EmptyState({
       <span className="empty-icon">
         <Terminal size={24} />
       </span>
-      <Eyebrow>WORKSPACE STATUS</Eyebrow>
       <h2>{title}</h2>
-      <p>{description}</p>
       {action}
     </div>
   );
