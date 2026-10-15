@@ -4,6 +4,8 @@ import { redactSecrets } from './redact.js';
 /**
  * Shared AI client used by detection and patch generation.
  * - Provider order is configurable (AI_PROVIDER_ORDER, default "groq,gemini"); keys stay server-side.
+ * - Each provider can have up to 4 keys (GROQ_API_KEY, GROQ_API_KEY_2..4, same for GEMINI): when one key
+ *   hits its rate limit the next key is tried at once; only the last key waits and retries.
  * - Secrets in repository text are redacted before sending and restored in the answer.
  * - Repository text is always passed as a delimited DATA block, never as instructions.
  * - Every call is charged to a per-run token budget and cached by prompt hash.
@@ -66,6 +68,10 @@ You cannot run code, browse, or access files. Answer only with JSON matching the
 
 interface Provider {
   name: string;
+  /** Display label, e.g. "Groq" or "Groq key 2". */
+  label: string;
+  /** Another key of the same provider follows: on a rate limit, move on instead of waiting. */
+  nextKey?: boolean;
   model: string;
   key: string;
   call(request: AiRequest, signal: AbortSignal): Promise<{ text: string; inputTokens?: number; outputTokens?: number }>;
@@ -78,6 +84,7 @@ function wrap(request: AiRequest) {
 function gemini(key: string, model: string, fetchImpl: typeof fetch): Provider {
   return {
     name: 'Gemini',
+    label: 'Gemini',
     model,
     key,
     async call(request, signal) {
@@ -122,6 +129,7 @@ function gemini(key: string, model: string, fetchImpl: typeof fetch): Provider {
 function groq(key: string, model: string, perMinuteBudget: number, fetchImpl: typeof fetch): Provider {
   return {
     name: 'Groq',
+    label: 'Groq',
     model,
     key,
     async call(request, signal) {
@@ -171,29 +179,35 @@ export function createAiClient(
   const cache = options.cache ?? new Map();
   const timeoutMs = Number(env.AI_TIMEOUT_MS) > 0 ? Number(env.AI_TIMEOUT_MS) : 90_000;
   const retryDelayMs = Number(env.AI_RETRY_DELAY_MS) >= 0 && env.AI_RETRY_DELAY_MS !== undefined ? Number(env.AI_RETRY_DELAY_MS) : 15_000;
-  const available: Record<string, () => Provider | null> = {
+  // PREFIX_API_KEY, PREFIX_API_KEY_2 .. PREFIX_API_KEY_4 (blank and duplicate keys are skipped).
+  const keys = (prefix: string) =>
+    ['', '_2', '_3', '_4']
+      .map((suffix) => env[`${prefix}_API_KEY${suffix}`]?.trim())
+      .filter((k, i, all): k is string => !!k && all.indexOf(k) === i);
+  const withKeys = (list: Provider[]) =>
+    list.map((p, i) => ({ ...p, label: i ? `${p.name} key ${i + 1}` : p.name, nextKey: i < list.length - 1 }));
+  const available: Record<string, () => Provider[]> = {
     groq: () =>
-      env.GROQ_API_KEY?.trim()
-        ? groq(
-            env.GROQ_API_KEY.trim(),
+      withKeys(
+        keys('GROQ').map((key) =>
+          groq(
+            key,
             env.GROQ_MODEL || 'openai/gpt-oss-120b',
             Number(env.GROQ_TOKEN_BUDGET) > 0 ? Number(env.GROQ_TOKEN_BUDGET) : 8_000,
             fetchImpl,
-          )
-        : null,
-    gemini: () =>
-      env.GEMINI_API_KEY?.trim()
-        ? gemini(env.GEMINI_API_KEY.trim(), env.GEMINI_MODEL || 'gemini-3.8-flash', fetchImpl)
-        : null,
+          ),
+        ),
+      ),
+    gemini: () => withKeys(keys('GEMINI').map((key) => gemini(key, env.GEMINI_MODEL || 'gemini-3.8-flash', fetchImpl))),
   };
   const order = (env.AI_PROVIDER_ORDER || 'groq,gemini')
     .split(',')
     .map((p) => p.trim().toLowerCase())
     .filter((p, i, all) => available[p] && all.indexOf(p) === i);
-  const providers = order.map((p) => available[p]()).filter((p): p is Provider => !!p);
+  const providers = order.flatMap((p) => available[p]());
   if (!providers.length) return null;
   return {
-    providers: providers.map((p) => `${p.name} (${p.model})`),
+    providers: providers.map((p) => `${p.label} (${p.model})`),
     async completeJSON<T>(original: AiRequest, budget: TokenBudget, signal: AbortSignal) {
       const redaction = redactSecrets(original.data);
       const request = { ...original, data: redaction.text };
@@ -216,14 +230,14 @@ export function createAiClient(
           try {
             out = await provider.call(request, controller.signal);
           } catch (first) {
-            // Rate limit / overload: wait once and retry the same provider before falling back.
-            if (!(first instanceof Error) || !/HTTP (429|503)/.test(first.message) || signal.aborted) throw first;
+            // Rate limit / overload: switch to the next key at once; the last key waits once and retries.
+            if (!(first instanceof Error) || !/HTTP (429|503)/.test(first.message) || signal.aborted || provider.nextKey) throw first;
             await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
             out = await provider.call(request, controller.signal);
           }
           const value = JSON.parse(redaction.restore(out.text)) as T;
           const usage: AiUsage = {
-            provider: provider.name,
+            provider: provider.label,
             model: provider.model,
             inputTokens: out.inputTokens ?? promptTokens,
             outputTokens: out.outputTokens ?? estimateTokens(out.text),
@@ -242,7 +256,7 @@ export function createAiClient(
               : error instanceof Error
                 ? error.message
                 : 'failed';
-          attempts.push({ provider: provider.name, reason });
+          attempts.push({ provider: provider.label, reason });
         } finally {
           clearTimeout(timer);
           signal.removeEventListener('abort', abort);
