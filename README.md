@@ -1,8 +1,10 @@
-# ProofPatch AI
+# Proof Patch
 
 **Detect. Prove. Patch. Verify.**
 
-National hackathon foundation: a shared developer/reviewer application with real authentication, local PostgreSQL-compatible persistence and honest integration boundaries. AI analysis and untrusted code execution are deliberately not enabled in Phase 1.
+**Live demo: https://proofpatch-r2.vercel.app** (use "Fill demo credentials" on the developer or reviewer login)
+
+Given a vulnerable repository, Proof Patch finds the security bug, has an AI write a minimal fix and an attack test, and proves in a locked Docker sandbox that the attack fails before the fix, passes after it, and that every test that passed before still passes. A security reviewer approves, and Proof Patch opens a pull request for the developer.
 
 ## Windows quick start
 
