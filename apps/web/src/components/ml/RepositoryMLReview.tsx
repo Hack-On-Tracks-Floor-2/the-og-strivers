@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { AnalysisRunSchema, FindingMLSchema, FindingSchema } from '@proofpatch/shared';
+import { AnalysisRunSchema, FindingMLSchema, FindingSchema, PatchSchema, VerificationRunSchema } from '@proofpatch/shared';
 import { api } from '../../lib/api';
 import { ACTIVE_RUNS } from '../../lib/security-data';
 import { useWorkspaceIndex } from '../../hooks/useSecurityData';
 import { useResource } from '../../hooks/useResource';
 import { RunScope } from '../RunScope';
 import { EmptyState, ErrorBox, Loading, Status, date } from '../ui';
+import { cweModelInsight, cweReference, mlAnalytics } from '../../lib/ml-analytics';
+import { MLAnalyticsDashboard } from './MLAnalyticsDashboard';
 
 const rowsSchema = z.array(z.object({ finding: FindingSchema, ml: FindingMLSchema.nullable() }));
 
@@ -24,11 +26,22 @@ export function RepositoryMLReview() {
   const selected = scoped.find((run) => run.id === params.get('run')) ?? scoped[0];
   const evidence = useResource(async () => {
     if (!selected) return undefined;
-    const [run, rows] = await Promise.all([
+    const [run, rows, additional] = await Promise.all([
       api(`/runs/${selected.id}`, AnalysisRunSchema),
       api(`/runs/${selected.id}/ml-findings`, rowsSchema),
+      Promise.allSettled([
+        api(`/runs/${selected.id}/patches`, z.array(PatchSchema)),
+        api(`/runs/${selected.id}/verification`, z.array(VerificationRunSchema)),
+      ]),
     ]);
-    return { run, rows };
+    const [patches, verification] = additional;
+    const scopedRows = [...new Map(rows.filter(row => row.finding.runId === run.id).map(row => [row.finding.id, {
+      finding: row.finding, ml: row.ml?.findingId === row.finding.id && row.ml.runId === run.id && row.ml.repositoryId === run.repositoryId ? row.ml : null,
+    }])).values()];
+    return { run, rows: scopedRows, patches: patches.status === 'fulfilled' ? patches.value : undefined,
+      verification: verification.status === 'fulfilled' ? verification.value : undefined,
+      unavailable: additional.flatMap((result,i) => result.status === 'rejected' ? [['patches','verification'][i]] : []),
+    };
   }, [selected?.id]);
   const data = evidence.data?.run.id === selected?.id ? evidence.data : undefined;
   useEffect(() => {
@@ -66,27 +79,34 @@ export function RepositoryMLReview() {
       ) : evidence.loading ? <Loading /> : data && (
         <>
           {data.run.status === 'not_configured' && <p className="analysis-notice" role="status">This run has not executed. Configure the existing analysis pipeline before repository findings can be produced.</p>}
+          {data.unavailable.length > 0 && <p className="analysis-notice" role="status">Evidence unavailable: {data.unavailable.join(', ')}. Dependent metrics are shown as unknown; saved predictions remain available.</p>}
+          <MLAnalyticsDashboard analytics={mlAnalytics(data.run.id, data.rows.map(row => row.finding), data.patches, data.verification)} rows={data.rows} repositoryId={repositoryId} runId={data.run.id} />
+          <div className="intelligence-heading"><div><h2>ML prediction insights</h2><p>Saved classifier output alongside the original scanner finding.</p></div></div>
           {!data.rows.length ? (
             <section className="panel"><EmptyState title="No findings recorded."
               description="ML runs only after a finding is saved. An empty list does not prove that this repository is safe." /></section>
-          ) : data.rows.map(({ finding, ml }) => (
+          ) : data.rows.map(({ finding, ml }) => {
+            const insight = cweModelInsight(finding, ml);
+            const reference = cweReference(finding.cwe);
+            return (
             <article className="panel details" key={finding.id} aria-label={`ML finding ${finding.file}:${finding.startLine}`}>
               <div className="artifact-heading">
                 <div><h3>{finding.file}:{finding.startLine}{finding.endLine !== finding.startLine ? `–${finding.endLine}` : ''}</h3><p>{finding.category}</p></div>
                 <Status value={ml?.status ?? (ACTIVE_RUNS.has(data.run.status) ? 'pending' : 'not_recorded')} />
               </div>
               <dl>
-                <dt>Source language</dt><dd>{ml?.language ?? 'Not recorded'}</dd>
-                <dt>Scanner CWE</dt><dd>{finding.cwe ?? 'Not assigned'}</dd>
+                <dt>Source language</dt><dd>{insight.language}</dd>
+                <dt>Scanner CWE</dt><dd>{reference ? <a href={reference} target="_blank" rel="noreferrer">{finding.cwe} · Official CWE reference ↗</a> : finding.cwe ?? 'Not assigned'}</dd>
                 <dt>Scanner severity</dt><dd><Status value={finding.severity} /></dd>
-                <dt>ML predicted CWE</dt><dd>{ml?.prediction?.status === 'predicted'
-                  ? ml.prediction.cwe ?? 'Benchmark-negative estimate (not a safety guarantee)'
-                  : ml?.status === 'unsupported' ? 'Unsupported language' : 'No category prediction'}</dd>
-                <dt>Model version</dt><dd><code>{ml?.prediction?.modelVersion ?? 'No model prediction recorded'}</code></dd>
+                <dt>ML predicted CWE</dt><dd>{!insight.supported ? 'No trained CWE model' : insight.prediction?.status === 'predicted'
+                  ? insight.prediction.cwe ?? 'Benchmark-negative estimate (not a safety guarantee)'
+                  : 'No category prediction'}</dd>
+                <dt>Category comparison</dt><dd><span className={`ml-comparison-badge ml-comparison-${insight.agreement.toLowerCase().replace(' ','-')}`}>{insight.agreement}</span></dd>
+                <dt>Model version</dt><dd><code>{insight.prediction?.modelVersion ?? 'No model prediction recorded'}</code></dd>
                 <dt>Source commit</dt><dd><code>{ml?.commitSha ?? 'No recorded ML provenance'}</code></dd>
                 <dt>Finding ID</dt><dd><code>{finding.id}</code></dd>
-                {ml?.prediction?.probability !== null && ml?.prediction?.probability !== undefined && <>
-                  <dt>Model probability</dt><dd>{(ml.prediction.probability * 100).toFixed(2)}% · uncalibrated</dd>
+                {insight.prediction?.probability !== null && insight.prediction?.probability !== undefined && <>
+                  <dt>Classification score</dt><dd>{(insight.prediction.probability * 100).toFixed(2)}% · uncalibrated</dd>
                 </>}
                 {ml?.snippet && <><dt>Classified source range</dt><dd>Lines {ml.snippet.startLine}–{ml.snippet.endLine} · {ml.snippet.characters.toLocaleString()} characters · {ml.snippet.transformation}</dd></>}
                 {ml && <><dt>Recorded</dt><dd>{date(ml.createdAt)}</dd></>}
@@ -102,7 +122,7 @@ export function RepositoryMLReview() {
                 {ml.snippet && <p>Classified snippet SHA-256: <code>{ml.snippet.sha256}</code></p>}
               </details>}
             </article>
-          ))}
+          ); })}
         </>
       )}
     </section>
