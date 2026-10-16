@@ -47,3 +47,25 @@
 @media(max-width:800px) {.ml-chart-grid,.ml-evidence-list{grid-template-columns:1fr;}.ml-repair-metrics{grid-template-columns:repeat(3,minmax(0,1fr));}.ml-model-strip{align-items:flex-start;}.ml-analytics-intro{flex-wrap:wrap;}}
 @media(max-width:480px) {.ml-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.workspace-content .ml-chart,.workspace-content .ml-repair-summary,.workspace-content .ml-patch-insights{padding:16px;}.ml-repair-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.ml-chart-title{flex-wrap:wrap;}.ml-severity{gap:14px;}.ml-analytics-intro h2{letter-spacing:-.5px;}}
 @media(prefers-reduced-motion:reduce) {.ml-stat{transition:none;}.ml-stat:hover{transform:none;}}
+.workspace-content .ml-risk-section {padding:22px;border-radius:9px;min-width:0;}
+.ml-risk-intro,.ml-risk-policy p {font-size:12px;line-height:1.8;color:#aeb6ba;}
+.ml-risk-distribution-title {font-size:12px;font-weight:500;color:#c7d4bd;margin:22px 0 -8px;}
+.ml-risk-distribution {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin:24px 0;}
+.ml-risk-distribution > div > span:first-child {display:flex;justify-content:space-between;font-size:12px;margin-bottom:9px;}
+.ml-risk-distribution .ml-risk-fill-critical {background:#fa7f8c;}.ml-risk-distribution .ml-risk-fill-high {background:#f5b275;}.ml-risk-distribution .ml-risk-fill-medium {background:#e7d480;}.ml-risk-distribution .ml-risk-fill-low {background:#8ecdb9;}
+.ml-risk-list {list-style:none;display:grid;gap:14px;margin:0;padding:0;}
+.ml-risk-list > li {border:1px solid #39413a;background:#15191a;border-radius:8px;padding:18px;min-width:0;}
+.ml-risk-heading {display:flex;justify-content:space-between;gap:20px;align-items:flex-start;}
+.ml-risk-heading h4 {font:500 14px/1.6 var(--code-font,monospace);margin:6px 0;overflow-wrap:anywhere;}
+.ml-risk-heading > div:first-child {min-width:0;}.ml-risk-heading > div > span:last-child {font-size:11px;color:#a8b0b4;}
+.ml-risk-score {border:1px solid currentColor;border-radius:7px;min-width:85px;text-align:center;padding:8px;flex-shrink:0;display:grid;gap:3px;}
+.ml-risk-score strong {font-size:25px;font-weight:500;}.ml-risk-score small {font-size:10px;opacity:.65;margin-left:2px;}.ml-risk-score > span {font-size:11px!important;color:inherit!important;}
+.ml-risk-critical {color:#fa7f8c;background:#2d1c23;}.ml-risk-high {color:#f5b275;background:#2b221a;}.ml-risk-medium {color:#e7d480;background:#282719;}.ml-risk-low {color:#8ecdb9;background:#192921;}
+.ml-risk-context {display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;font-size:11px;line-height:1.8;color:#b5bcb0;margin:17px 0 10px;}
+.ml-risk-classifier {font-size:11px;line-height:1.8;color:#aab4bb;overflow-wrap:anywhere;}.ml-risk-classifier strong {color:#c9d4bf;font-weight:400;}
+.ml-risk-list details {margin:14px 0;font-size:12px;color:#b6c0bf;line-height:1.9;}.ml-risk-list details > p {overflow-wrap:anywhere;}
+.ml-risk-list summary,.ml-risk-policy summary {cursor:pointer;color:#d7e6bf;font-size:12px;}
+.ml-risk-factors {list-style:none;padding:0;display:grid;gap:10px;}.ml-risk-factors > li {background:#1d2223;border:1px solid #343b3d;padding:13px;border-radius:5px;}
+.ml-risk-factors li > div {display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}.ml-risk-factors p {margin:7px 0;}.ml-risk-factors small {display:block;color:#9da8a7;}.ml-risk-factors a {display:inline-block;margin:5px 12px 0 0;}
+.ml-risk-list .text-button {font-size:11px;margin-top:5px;}.ml-risk-policy {margin-top:20px;border-top:1px solid #343a32;padding-top:16px;}
+@media(max-width:600px){.ml-risk-distribution{grid-template-columns:repeat(2,minmax(0,1fr));}.workspace-content .ml-risk-section{padding:15px;}.ml-risk-list > li{padding:13px;}.ml-risk-heading{gap:10px;}.ml-risk-score{min-width:70px;}.ml-risk-factors small{overflow-wrap:anywhere;}}

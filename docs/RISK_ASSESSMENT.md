@@ -1,0 +1,43 @@
+# Evidence-Based Risk Priority Score
+
+Policy `risk-priority-v1` adds per-finding assessment to the existing risk dashboard on `feature/vulnerability-risk-dashboard`, based on `c05f930991f4cca85d8771d9d396791de4c179d7`. This is a deterministic **triage priority**, not ML-predicted exploitability, CVSS, a probability of compromise or a validated business-risk estimate. Weights are explicit policy choices; they were not learned, calibrated or tuned on a dataset.
+
+## Service and evidence
+
+`apps/web/src/services/risk-assessment.ts` is a pure, read-only assessment service. `assessFindingRisk()` returns score, level, individual factors/points, explanations, unknown indicators, policy version, `mlContributes:false` and current candidate-repair status. `assessRunRisk()` scopes and deduplicates findings, then ranks them by descending score with stable tie breakers. It consumes the existing authenticated finding, patch and verification API responses. It does not run inference, execute submitted code, write a database record, change scanner severity or enforce backend approval decisions. Results are recomputed from saved records, not persisted as a new historical assessment snapshot.
+
+Inspection found an important distinction: `agents/detection.ts` obtains severity from the AI analysis verdict, and `pipeline/orchestrator.ts:saveFinding()` persists that value. The score calls it **recorded analysis severity**, not necessarily raw Semgrep severity. Existing `Finding.confidence` is not an exploitation probability and is not used.
+
+Available CWE classifiers categorize Java/Python benchmark code. The optional line-locator architecture scores vulnerability locations; it is not a validated contextual risk model. No compatible trained risk model is used or fabricated. Original Java/Python models, inference routes, artifacts and datasets remain unchanged. Their saved classification output is shown alongside each assessment, with its own uncalibrated score, and contributes **zero** risk points.
+
+## Formula
+
+`score = min(100, max(40, severityBase + matchedRedGreenBonus + staticToolBonus + latestSecurityFailureBonus))`
+
+- **Severity base:** Critical 85, High 65, Medium 45, Low 25, Informational 15. Missing/invalid severity uses 65. Source: the saved finding's `severity` field. This is a priority policy over a recorded assessment, not independently verified impact.
+- **Matched sandbox red/green bonus: +20 at most once.** Requires an associated patch with security-test metadata, a passing baseline, successful original-source reproduction and passing candidate security retest. The existing shared proof rules require completed logs/artifact references, expected exits and nonempty non-skipped test summaries without execution errors. Reproduction/retest commands must match, and at least one named assertion failing on original source must pass in the retest. Source: `patch.securityTest` and the latest baseline/reproduction/security-retest records for that patch. This supports a controlled test-workspace observation, not internet exposure or general exploit reliability. Recorded artifact references are linked; the scoring service does not independently re-execute or re-audit the test's contents.
+- **Static-tool corroboration: +5 at most once.** Requires at least two distinct recognized names among Semgrep, Bandit and Proof Patch rules, attached to a scanner/scanner+AI finding. Aliases and duplicate names are normalized. AI-only, unknown and trained-model scanner labels do not qualify. Source: `finding.scanners` and `finding.source`. Tools may share rules; this is corroboration, not statistical independence or exploit probability.
+- **Latest candidate security assertion still failing: +10.** Requires baseline/original proof, the same security-test command and a matching named assertion still failing in the latest candidate retest, with exit 1, completed logs/artifact and zero test execution errors. Generic errors, timeouts, missing records, failures on unrelated tests, or an old failed attempt do not qualify. This is repair-triage evidence; a security-test assumption may still need review.
+- **Unknown-context floor:** Runtime reachability, required authentication, business impact and production deployment are not captured as structured verified fields. They remain unknown. A floor of 40 prevents missing context from producing a Low rating. The exact additive floor adjustment is displayed as a policy factor. No exposure is inferred from file names, scanner/CWE labels, AI prose or repository comments.
+
+Bands: **Critical 85–100; High 65–84; Medium 40–64; Low 0–39**. All current findings have unverified context, so this policy deliberately cannot assign Low with today's data. The Low band is disclosed, not populated with invented evidence. Missing severity receives the conservative High baseline; missing proof adds no positive proof bonus and never establishes safety.
+
+Duplicate attempts do not accumulate bonuses. A matched proof may come from an earlier candidate on the same submitted source. Records must match finding, run, patch and owner association. Latest stages are selected deterministically; contradictory records with identical timestamps conservatively prefer the worse status. A later failed/pending candidate cannot inherit a previous candidate's verified repair status.
+
+Candidate repair status is separate from original-source priority. Complete proof can yield **Verified candidate**, but no points are subtracted because a proposed/approved/tested patch or a published PR does not demonstrate that production is repaired. No merge, deployment or exposure-monitoring integration is invented.
+
+## Dashboard
+
+`components/ml/RiskAssessment.tsx` adds a ranked Risk Assessment section to the existing ML Intelligence page. It shows integer priority scores/levels, a separate risk-priority distribution, factor breakdowns and actual log links, unknowns, current repair status and existing CWE-model evidence. Original finding severity statistics remain, with clearer labels to distinguish them from priority levels. `lib/ml-analytics.ts` passes through the already-loaded verification records; no new endpoint or dependency is introduced.
+
+## Executed validation
+
+Thirteen policy tests cover severity and missing-context defaults, genuine-shaped matched proof contracts, duplicate records, wrong exits/errors/skipped suites, missing metadata, unrelated commands/cases, foreign run/owner/finding association, recognized scanner provenance, ignored CWE/AI confidence/free-text claims, latest failed assertions, caps, repair-state separation, deterministic ordering, conflicting stage records, scope and exact level boundaries. These unit proof records are explicitly simulated fixtures, not claimed live executions.
+
+Final checks passed: **56/56 focused tests** (`risk-assessment`, `ml-analytics`, `security-data`, and shared contracts), `npm run typecheck`, and `npm run build`. Browser inspection of a clearly labeled, ignored QA preview confirmed the ranked score, distribution, expandable factors, unknowns and repair status render from the archived records described below. This preview did not insert application records or exercise a live production scan. The existing Vite bundle-size advisory remains.
+
+The scoring service was also executed on the existing **archived authorized Python fixture records with genuine local pytest results**. Result: **90/100, Critical** = recorded High severity 65 + matched original-fail/candidate-pass proof 20 + two recorded static-tool labels 5. Latest candidate status: **Verified candidate**; runtime reachability, authentication, business impact and production deployment remain unknown. ML contributes no points. The archive's provider/scanner reports were controlled test doubles; this is neither a fresh production repository scan nor empirical validation of these policy weights. No old repair-model code or dataset was imported into this branch. Local execution output is saved in ignored `.qa/risk-assessment-demo.json`.
+
+For conceptual context, [OWASP's risk-rating discussion](https://community.owasp.org/OWASP_Risk_Rating_Methodology) distinguishes contextual likelihood and impact. This project does not claim to implement or validate that methodology. Missing business/exposure information limits the result to transparent triage priority.
+
+No model training, dataset collection, experimental repair-feature copying, security/regression gate changes, automatic push or deployment are part of this change. A local repository without recorded runs has no findings to assess; no run or vulnerability is inserted to populate the dashboard.

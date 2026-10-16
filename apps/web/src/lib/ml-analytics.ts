@@ -39,7 +39,7 @@ export function mlAnalytics(runId: string, input: Finding[], patchInput: Patch[]
     const key = cweReference(finding.cwe) ? finding.cwe!.trim().toUpperCase() : 'Unassigned CWE';
     categories.set(key, (categories.get(key) ?? 0) + 1);
   }
-  return { findings, patches, states, total: findings.length,
+  return { findings, patches, verification, states, total: findings.length,
     severities: (['critical','high','medium','low'] as const).map(name => ({name, count: findings.filter(row => row.severity === name).length})),
     informational: findings.filter(row => row.severity === 'info').length,
     categories: [...categories].map(([name,count]) => ({name,count})).sort((a,b) => b.count-a.count || a.name.localeCompare(b.name)),
