@@ -1,3 +1,4 @@
+import { FlaskConical } from 'lucide-react';
 import type { VerificationRun } from '@proofpatch/shared';
 
 type Outcome = 'passed' | 'failed' | 'error' | 'skipped' | 'missing';
@@ -26,13 +27,26 @@ export function RegressionTable({ stages }: { stages: VerificationRun[] }) {
   const kept = rows.filter((r) => r.b === 'passed' && r.a === 'passed').length;
   const short = (id: string) => id.replace(/^.*?::/, '').length > 70 ? `…${id.slice(-70)}` : id.replace(/^.*?::/, '');
 
+  const added = rows.filter((r) => r.verdict === 'added').length;
+  const stat = (t?: { passed: number; total: number } | null) => (t ? `${t.passed}/${t.total}` : '—');
+
   return (
-    <section className="regression-table">
+    <section className={`key-section regression-table ${broken ? 'is-failed' : 'is-passed'}`}>
+      <header className="key-section-head">
+        <h2><FlaskConical size={20} aria-hidden="true" /> Test suite</h2>
+        <span className={`key-section-badge ${broken ? 'failed' : 'passed'}`}>{broken ? 'Regression found' : 'No regression'}</span>
+      </header>
       <h3 className={broken ? 'failed' : 'passed'}>
         {broken
           ? `${broken} test${broken > 1 ? 's' : ''} that passed before the patch no longer pass`
           : `All ${kept} tests that passed before the patch still pass`}
       </h3>
+      <dl className="key-section-stats">
+        <div><dt>Before patch</dt><dd>{stat(baseline)}</dd></div>
+        <div><dt>After patch</dt><dd>{stat(after)}</dd></div>
+        <div><dt>New security tests</dt><dd>{added}</dd></div>
+        <div><dt>Broken</dt><dd className={broken ? 'failed' : ''}>{broken}</dd></div>
+      </dl>
       <div className="regression-scroll">
         <table>
           <thead>

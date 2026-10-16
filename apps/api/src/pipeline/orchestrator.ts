@@ -600,14 +600,14 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     const { patch, repository, finding } = ctx;
     const github = options.github!;
     const branch = `proofpatch/fix-${patch.id.slice(0, 8)}`;
-    const title = `Security fix: ${finding ? `${finding.cwe ?? ''} ${finding.category} in ${finding.file}`.trim() : 'ProofPatch fix'}`;
+    const title = `Security fix: ${finding ? `${finding.cwe ?? ''} ${finding.category} in ${finding.file}`.trim() : 'Proof Patch fix'}`;
     const body = [
-      'Opened by ProofPatch after a security reviewer approved this fix.',
+      'Opened by Proof Patch after a security reviewer approved this fix.',
       '',
       ...(patch.merge?.checks ?? []).map((c) => `- ${c.passed ? '✅' : '❌'} **${c.stage}**: ${c.summary}`),
       ...(patch.merge?.resolvedByAi.length ? ['', `Merge conflicts in ${patch.merge.resolvedByAi.join(', ')} were resolved by AI and confirmed by a reviewer.`] : []),
       '',
-      'Please review and merge this pull request yourself; ProofPatch never merges it automatically.',
+      'Please review and merge this pull request yourself; Proof Patch never merges it automatically.',
     ].join('\n');
     if (!github.canPublish) {
       await setMerge(patch, { status: 'failed', message: 'All proofs passed on the latest code, but GITHUB_TOKEN is not configured on the server, so the branch could not be pushed.' });

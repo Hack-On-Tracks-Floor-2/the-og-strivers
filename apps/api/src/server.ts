@@ -99,7 +99,7 @@ console.log(
 );
 const app = await createApp(db, { origin, production, pipeline });
 const server = app.listen(port, '127.0.0.1', () =>
-  console.log(`ProofPatch API ready at http://127.0.0.1:${port}/api/health`),
+  console.log(`Proof Patch API ready at http://127.0.0.1:${port}/api/health`),
 );
 server.on('error', async (error) => {
   console.error(error.message);

@@ -73,7 +73,7 @@ export function parseSemgrep(text: string | undefined): { hits: SemgrepHit[]; er
 /** Which scanners contributed to a candidate, from its joined rule ids ("semgrep:x+bandit:B602+shell-true"). */
 export function scannersOf(rule: string): string[] {
   const names = rule.split('+').map((id) =>
-    id.startsWith('semgrep:') ? 'Semgrep' : id.startsWith('bandit:') ? 'Bandit' : id === 'trained-model' ? 'Trained model' : 'ProofPatch rules',
+    id.startsWith('semgrep:') ? 'Semgrep' : id.startsWith('bandit:') ? 'Bandit' : id === 'trained-model' ? 'Trained model' : 'Proof Patch rules',
   );
   return [...new Set(names)];
 }

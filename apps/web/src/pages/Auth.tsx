@@ -216,7 +216,7 @@ export function AuthPage({
           </button>
           {role === 'developer' && (
             <p className="form-bottom">
-              {register ? 'Already have an account?' : 'New to ProofPatch?'}{' '}
+              {register ? 'Already have an account?' : 'New to Proof Patch?'}{' '}
               <Link to={`/developer/${register ? 'login' : 'register'}`}>
                 {register ? 'Log in' : 'Create account'}
               </Link>

@@ -35,11 +35,13 @@ const reviewerNav = [
   ['findings', 'Security Findings', ShieldAlert],
   ['ml', 'ML Intelligence', BrainCircuit],
   ['patches', 'Patch Inspection', GitPullRequest],
-  ['regression', 'Regression Verification', FlaskConical],
   ['evidence', 'Evidence Rail', Layers],
   ['decisions', 'Review Decisions', ClipboardCheck],
+  ['regression', 'Regression Verification', FlaskConical],
   ['settings', 'Settings', Settings],
 ] as const;
+/** Information-only pages, listed apart at the bottom of the sidebar. */
+const FOOTER_PATHS: readonly string[] = ['regression', 'settings'];
 export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
   const auth = useAuth();
   const location = useLocation();
@@ -84,14 +86,8 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
             <X size={20} />
           </button>
         </div>
-        <div className="workspace-selector">
-          <span className="workspace-avatar">{role === 'developer' ? 'D' : 'S'}</span>
-          <div>
-            <strong>{role === 'developer' ? 'Developer workspace' : 'Review workspace'}</strong>
-          </div>
-        </div>
         <nav>
-          {nav.map(([path, label, Icon]) => (
+          {nav.filter(([path]) => !FOOTER_PATHS.includes(path)).map(([path, label, Icon]) => (
             <NavLink
               end={!path}
               onClick={() => setOpen(false)}
@@ -103,6 +99,19 @@ export function Dashboard({ role }: { role: 'developer' | 'reviewer' }) {
               {label}
             </NavLink>
           ))}
+          <div className="nav-footer-group">
+            {nav.filter(([path]) => FOOTER_PATHS.includes(path)).map(([path, label, Icon]) => (
+              <NavLink
+                onClick={() => setOpen(false)}
+                to={`${base}/${path}`}
+                key={label}
+                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={18} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
         </nav>
         <div className="sidebar-bottom">
           <div className="integration-card">

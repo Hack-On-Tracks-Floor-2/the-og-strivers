@@ -215,12 +215,12 @@ describe('Semgrep adapter', () => {
     expect(argv).toContain('--metrics=off');
     expect(argv.join(' ')).not.toMatch(/autofix|--fix|auto/);
   });
-  it('merges a Semgrep hit with ProofPatch rules on the same line and keeps both scanners', async () => {
+  it('merges a Semgrep hit with Proof Patch rules on the same line and keeps both scanners', async () => {
     const { hits } = parseSemgrep(REPORT)!;
     const { candidates } = await findCandidates(FIXTURE, { external: hits });
     const sql = candidates.find((c) => c.cwe === 'CWE-89')!;
     expect(sql.rule).toContain('semgrep:formatted-sql-query');
-    expect(scannersOf(sql.rule)).toEqual(expect.arrayContaining(['Semgrep', 'ProofPatch rules']));
+    expect(scannersOf(sql.rule)).toEqual(expect.arrayContaining(['Semgrep', 'Proof Patch rules']));
   });
 });
 

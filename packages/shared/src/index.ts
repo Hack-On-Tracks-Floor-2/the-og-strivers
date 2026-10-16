@@ -120,7 +120,7 @@ export const FindingSchema = z.object({
   // CWE identifier (e.g. "CWE-89") and which stage of the search funnel produced it.
   cwe: z.string().nullable().default(null),
   source: z.enum(['scanner', 'ai', 'scanner+ai']).default('ai'),
-  /** Scanners that reported this location (e.g. Semgrep, Bandit, ProofPatch rules, Trained model). */
+  /** Scanners that reported this location (e.g. Semgrep, Bandit, Proof Patch rules, Trained model). */
   scanners: z.array(z.string()).default([]),
   createdAt: Timestamp,
 });

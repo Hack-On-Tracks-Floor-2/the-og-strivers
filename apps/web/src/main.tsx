@@ -55,7 +55,7 @@ createRoot(document.getElementById('root')!).render(
               <div className="not-found">
                 <h1>PAGE NOT FOUND.</h1>
                 <Link className="button primary" to="/">
-                  Back to ProofPatch ↗
+                  Back to Proof Patch ↗
                 </Link>
               </div>
             }

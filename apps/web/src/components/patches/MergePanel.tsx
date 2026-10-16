@@ -54,13 +54,16 @@ export function MergePanel({ patch: initial, base }: { patch: Patch; base: strin
   }
 
   return (
-    <section className="panel merge-panel">
-      <h3>
-        <GitMerge size={18} /> {merge ? LABELS[merge.status] : 'Approved — ready to merge'}
-      </h3>
+    <section className="key-section merge-panel">
+      <header className="key-section-head">
+        <h2><GitMerge size={20} aria-hidden="true" /> Merge into the developer&apos;s repository</h2>
+        <span className={`key-section-badge ${!merge ? 'ready' : merge.status === 'merged' || merge.status === 'already_fixed' ? 'passed' : merge.status === 'failed' || merge.status === 'sent_back' ? 'failed' : 'pending'}`}>
+          {merge ? LABELS[merge.status] : 'Approved — ready to merge'}
+        </span>
+      </header>
       <p>
         {merge?.message ||
-          'ProofPatch lays this fix onto the latest code, re-runs the attack test and the full suite, then pushes a branch and opens a pull request for the developer. If the latest code breaks the fix, it goes back for patching.'}
+          'Proof Patch lays this fix onto the latest code, re-runs the attack test and the full suite, then pushes a branch and opens a pull request for the developer. If the latest code breaks the fix, it goes back for patching.'}
       </p>
       {merge?.checks.length ? (
         <ul className="merge-checks">

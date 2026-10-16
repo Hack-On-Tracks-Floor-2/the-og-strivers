@@ -68,7 +68,7 @@ export function Landing({ role }: { role?: PortalRole }) {
         </main>
       ) : (
         <main className="split-portals">
-          <h1 className="sr-only">ProofPatch AI — developer and security reviewer portals</h1>
+          <h1 className="sr-only">Proof Patch — developer and security reviewer portals</h1>
           <PortalPanel role="developer" />
           <PortalPanel role="reviewer" />
           <div className="portal-divider" aria-hidden="true">

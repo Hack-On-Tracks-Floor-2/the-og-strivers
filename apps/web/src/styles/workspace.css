@@ -1638,3 +1638,27 @@ details[open] > summary > .disclosure-chevron {
 .regression-table .outcome.failed, .regression-table .outcome.error { color: #ff6b6b; }
 .regression-table tr.broken { background: rgba(255, 107, 107, 0.12); }
 .regression-table tr.added td:last-child { color: #8ab4ff; }
+
+/* Key sections on the patch page: test suite and merge are the main proof and action. */
+.key-section { border: 1px solid #4a5a1c; border-radius: 12px; background: #15170f; padding: 20px 22px 22px; margin: 26px 0; box-shadow: inset 0 3px 0 var(--lime, #d7ff3f); }
+.key-section.is-failed { border-color: #6b2a2a; background: #1a1212; box-shadow: inset 0 3px 0 #ff6b6b; }
+.key-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.key-section-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 1.35rem; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text, #f4f4f0); }
+.key-section-head h2 svg { color: var(--lime, #d7ff3f); }
+.key-section.is-failed .key-section-head h2 svg { color: #ff6b6b; }
+.key-section-badge { font-size: 0.8rem; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #41482b; background: #202319; color: var(--lime, #d7ff3f); }
+.key-section-badge.failed { border-color: #6b2a2a; background: #2a1414; color: #ff8a8a; }
+.key-section-badge.pending { border-color: #6b5420; background: #2a2210; color: #fbbf24; }
+.key-section-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 16px; }
+.key-section-stats > div { border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 12px; background: rgba(0, 0, 0, 0.25); }
+.key-section-stats dt { font-size: 0.75rem; color: var(--muted, #a4a4aa); margin-bottom: 4px; }
+.key-section-stats dd { margin: 0; font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.key-section-stats dd.failed { color: #ff6b6b; }
+.key-section.regression-table h3 { font-size: 1.05rem; }
+.key-section .regression-scroll { border-radius: 8px; }
+.key-section.merge-panel > p { color: var(--muted, #a4a4aa); line-height: 1.6; margin: 0 0 14px; }
+.key-section.merge-panel .patch-action-bar { border-top: none; padding: 4px 0 0; margin: 0; }
+@media (max-width: 760px) { .key-section-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Sidebar: information-only pages grouped at the bottom. */
+.nav-footer-group { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border, #29292d); display: flex; flex-direction: column; gap: 5px; }

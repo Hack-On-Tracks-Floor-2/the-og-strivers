@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Link to="/" className="brand" aria-label="ProofPatch home">
+    <Link to="/" className="brand" aria-label="Proof Patch home">
       <span className="brand-mark">
         <Shield size={20} strokeWidth={2.5} />
       </span>
       <span>
-        PROOFPATCH<span className="brand-ai"> AI</span>
+        PROOF PATCH
       </span>
       {!compact && <span className="brand-version">V.01</span>}
     </Link>

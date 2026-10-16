@@ -88,7 +88,7 @@ export function githubPublisher(token = process.env.GITHUB_TOKEN?.trim() || '', 
     },
     async publish({ repository, dir, branch, baseBranch, title, body, signal }) {
       if (!token) throw new Error('GITHUB_TOKEN is not configured on the server, so the fix branch cannot be pushed.');
-      const ident = ['-c', 'user.name=ProofPatch', '-c', 'user.email=proofpatch@users.noreply.github.com', '-c', 'core.hooksPath=/dev/null'];
+      const ident = ['-c', 'user.name=Proof Patch', '-c', 'user.email=proofpatch@users.noreply.github.com', '-c', 'core.hooksPath=/dev/null'];
       await git(['checkout', '-b', branch], dir, signal);
       await git(['add', '-A'], dir, signal);
       await git([...ident, 'commit', '-m', title, '-m', body], dir, signal);
