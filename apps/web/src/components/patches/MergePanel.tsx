@@ -97,7 +97,7 @@ export function MergePanel({ patch: initial, base }: { patch: Patch; base: strin
       <div className="patch-action-bar">
         {(!merge || merge.status === 'failed') && (
           <button className="button primary small-button" disabled={working} onClick={() => post(`/reviews/${patch.id}/merge`)}>
-            {working ? 'Merging…' : merge ? 'Retry merge' : 'Merge fix'} <GitMerge size={14} />
+            {working ? 'Merging…' : merge ? 'Retry merge' : 'PUSH'} <GitMerge size={14} />
           </button>
         )}
         {merge?.status === 'awaiting_review' && (
