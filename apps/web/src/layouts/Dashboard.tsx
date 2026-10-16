@@ -22,11 +22,7 @@ import { Brand, Loading, ErrorBox } from '../components/ui';
 import { useAuth } from '../features/auth';
 import { api } from '../lib/api';
 import { HealthSchema } from '@proofpatch/shared';
-const developerNav = [
-  ['', 'Repositories', FolderGit2],
-  ['ml', 'ML Intelligence', BrainCircuit],
-  ['regression', 'Regression Verification', FlaskConical],
-] as const;
+const developerNav = [['', 'Repositories', FolderGit2]] as const;
 const reviewerNav = [
   ['', 'Review Overview', LayoutDashboard],
   ['repositories', 'Repositories', FolderGit2],

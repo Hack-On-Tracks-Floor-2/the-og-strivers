@@ -26,14 +26,14 @@ createRoot(document.getElementById('root')!).render(
               <Route path={`/${role}`} element={<Landing role={role} />} />
               <Route path={`/${role}/login`} element={<AuthPage role={role} />} />
               <Route path={`/${role}/app`} element={<Dashboard role={role} />}>
-                <Route path="ml" element={<MLIntelligencePage />} />
-                <Route path="regression" element={<RegressionVerificationPage />} />
                 {role === 'developer' ? (
-                  // Repository findings, patches and evidence remain reviewer-only.
+                  // Developers only add and track repositories; everything else is reviewer-only.
                   <Route index element={<SubmissionsPage />} />
                 ) : (
                   <>
                     <Route index element={<OverviewPage />} />
+                    <Route path="ml" element={<MLIntelligencePage />} />
+                    <Route path="regression" element={<RegressionVerificationPage />} />
                     <Route path="repositories" element={<RepositoriesPage />} />
                     <Route path="repositories/:id" element={<RepositoryDetailPage />} />
                     <Route path="scanner" element={<ScannerPage />} />
